@@ -12,7 +12,7 @@ type
   MouseButton* = enum
     mbLeft, mbRight, mbMiddle
 
-  EventFlags* = set[enum]
+  EventFlags* = set[uint8]
 
   Event* = ref object
     kind*: EventKind
@@ -93,6 +93,7 @@ type
     userSelect*: UserSelectKind
     boxShadow*: seq[BoxShadow]
     textShadow*: seq[TextShadow]
+    variables*: Table[string, string]
     transform*: seq[Transform2D]
     transformOrigin*: tuple[x, y: CssValue]
     transition*: seq[Transition]
@@ -108,6 +109,7 @@ type
     listStyleType*: ListStyleKind
     tableLayout*: TableLayoutKind
     borderCollapse*: BorderCollapseKind
+    boxSizing*: BoxSizingKind
     borderSpacing*: tuple[x, y: CssValue]
     resize*: ResizeKind
     appearance*: AppearanceKind
@@ -292,6 +294,9 @@ type
 
   BorderCollapseKind* = enum
     bcSeparate, bcCollapse
+
+  BoxSizingKind* = enum
+    bszContentBox, bszBorderBox
 
   ResizeKind* = enum
     rkNone, rkBoth, rkHorizontal, rkVertical
@@ -574,6 +579,7 @@ proc transparent*(): ColorRGBA = ColorRGBA(r: 0, g: 0, b: 0, a: 0)
 
 proc defaultStyle*(): ComputedStyle =
   result = ComputedStyle(
+    variables: initTable[string, string](),
     display: dkBlock,
     position: pkStatic,
     float: fkNone,
@@ -652,6 +658,7 @@ proc defaultStyle*(): ComputedStyle =
     listStyleType: lsDisc,
     tableLayout: tlAuto,
     borderCollapse: bcSeparate,
+    boxSizing: bszContentBox,
     resize: rkNone,
     appearance: apAuto,
     caretColor: rgba(0, 0, 0),
@@ -663,71 +670,71 @@ proc defaultStyle*(): ComputedStyle =
 
 proc inlineDefaultStyle*(tag: string): ComputedStyle =
   result = defaultStyle()
-  case tag
+  let t = tag.toLowerAscii()
+  case t
   of "div", "section", "article", "aside", "header", "footer", "main", "nav",
-     "p", "h1", "h2", "h3", "h4", "h5", "h6", "form", "fieldset", "table",
-     "ul", "ol", "li", "dl", "dt", "dd", "blockquote", "pre", "figure",
+     "form", "fieldset",
+     "ul", "ol", "dl", "dt", "dd", "blockquote", "figure",
      "figcaption", "address", "details", "summary":
     result.display = dkBlock
-  of "span", "a", "strong", "em", "b", "i", "u", "s", "code", "kbd",
-     "samp", "var", "cite", "abbr", "time", "mark", "small", "sub", "sup",
-     "bdi", "bdo", "q", "ruby", "rp", "rt":
-    result.display = dkInline
-  of "button", "input", "select", "textarea", "label", "img", "canvas",
-     "video", "audio", "object", "embed", "iframe":
-    result.display = dkInlineBlock
-  of "table":
-    result.display = dkTable
-  of "tr":
-    result.display = dkTableRow
-  of "td", "th":
-    result.display = dkTableCell
-  of "thead":
-    result.display = dkTableHeader
-  of "tfoot":
-    result.display = dkTableFooter
-  of "li":
-    result.display = dkListItem
-  of "head", "script", "style", "meta", "link", "title":
-    result.display = dkNone
+  of "p":
+    result.display = dkBlock
+    result.marginTop = cssVal(16)
+    result.marginBottom = cssVal(16)
   of "h1":
+    result.display = dkBlock
     result.fontSize = cssVal(32)
     result.fontWeight = fw700
     result.marginTop = cssVal(21)
     result.marginBottom = cssVal(21)
   of "h2":
+    result.display = dkBlock
     result.fontSize = cssVal(24)
     result.fontWeight = fw700
     result.marginTop = cssVal(19)
     result.marginBottom = cssVal(19)
   of "h3":
+    result.display = dkBlock
     result.fontSize = cssVal(18)
     result.fontWeight = fw700
     result.marginTop = cssVal(18)
     result.marginBottom = cssVal(18)
   of "h4":
+    result.display = dkBlock
     result.fontSize = cssVal(16)
     result.fontWeight = fw700
-    result.marginTop = cssVal(21)
-    result.marginBottom = cssVal(21)
+    result.marginTop = cssVal(21.28)
+    result.marginBottom = cssVal(21.28)
   of "h5":
+    result.display = dkBlock
     result.fontSize = cssVal(13)
     result.fontWeight = fw700
     result.marginTop = cssVal(22)
     result.marginBottom = cssVal(22)
   of "h6":
+    result.display = dkBlock
     result.fontSize = cssVal(10)
     result.fontWeight = fw700
     result.marginTop = cssVal(24)
     result.marginBottom = cssVal(24)
-  of "p":
-    result.marginTop = cssVal(16)
-    result.marginBottom = cssVal(16)
+  of "pre":
+    result.display = dkBlock
+    result.fontFamily = "monospace"
+  of "li":
+    result.display = dkListItem
+  of "span", "strong", "em", "b", "i", "u", "s", "var", "cite", "abbr", "time", "mark", "small", "sub", "sup",
+     "bdi", "bdo", "q", "ruby", "rp", "rt":
+    result.display = dkInline
+  of "code", "kbd", "samp":
+    result.display = dkInline
+    result.fontFamily = "monospace"
   of "a":
+    result.display = dkInline
     result.color = rgba(0, 0, 238)
     result.textDecoration = tdUnderline
     result.cursor = cuPointer
   of "button":
+    result.display = dkInlineBlock
     result.cursor = cuPointer
     result.appearance = apButton
     result.paddingTop = cssVal(2)
@@ -743,6 +750,7 @@ proc inlineDefaultStyle*(tag: string): ComputedStyle =
     result.borderBottomStyle = bsSolid
     result.borderLeftStyle = bsSolid
   of "input":
+    result.display = dkInlineBlock
     result.appearance = apTextfield
     result.paddingTop = cssVal(1)
     result.paddingRight = cssVal(2)
@@ -757,24 +765,39 @@ proc inlineDefaultStyle*(tag: string): ComputedStyle =
     result.borderBottomStyle = bsSolid
     result.borderLeftStyle = bsSolid
   of "img":
+    result.display = dkInlineBlock
     result.width = cssAuto()
     result.height = cssAuto()
-  of "pre", "code", "kbd", "samp":
-    result.fontFamily = "monospace"
-  of "strong", "b":
-    result.fontWeight = fw700
-  of "em", "i":
-    result.fontStyle = fsItalic
-  of "ul", "ol":
+  of "select", "textarea", "label", "canvas",
+     "video", "audio", "object", "embed", "iframe":
+    result.display = dkInlineBlock
+  of "table":
+    result.display = dkTable
+  of "tr":
+    result.display = dkTableRow
+  of "td", "th":
+    result.display = dkTableCell
+  of "thead":
+    result.display = dkTableHeader
+  of "tfoot":
+    result.display = dkTableFooter
+  of "head", "script", "style", "meta", "link", "title":
+    result.display = dkNone
+  else: discard
+
+  if t == "ul" or t == "ol":
     result.paddingLeft = cssVal(40)
     result.marginTop = cssVal(16)
     result.marginBottom = cssVal(16)
-  of "blockquote":
+  elif t == "blockquote":
     result.marginLeft = cssVal(40)
     result.marginRight = cssVal(40)
     result.marginTop = cssVal(16)
     result.marginBottom = cssVal(16)
-  else: discard
+  elif t == "strong" or t == "b":
+    result.fontWeight = fw700
+  elif t == "em" or t == "i":
+    result.fontStyle = fsItalic
 
 proc matches*(node: Node, selector: string): bool =
   if node.kind != nkElement: return false

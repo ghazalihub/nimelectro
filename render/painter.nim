@@ -1,4 +1,4 @@
-import std/[math, strutils, tables, sequtils, options]
+import std/[math, strutils, tables, sequtils, options, algorithm]
 import pixie
 import pixie/fontformats/opentype
 import ../core/dom
@@ -30,7 +30,7 @@ type
 
   GradientStop* = object
     offset*: float32
-    color*: ColorRGBA
+    color*: dom.ColorRGBA
 
 proc newFontCache*(): FontCache =
   FontCache(
@@ -91,13 +91,13 @@ proc getFont*(fc: FontCache, family: string, size: float32,
   fc.fonts[key] = f
   result = f
 
-proc toPColor*(c: ColorRGBA): pixie.Color =
+proc toPColor*(c: dom.ColorRGBA): pixie.Color =
   pixie.color(c.r.float32 / 255, c.g.float32 / 255, c.b.float32 / 255, c.a.float32 / 255)
 
-proc toRGBX*(c: ColorRGBA): ColorRGBX =
-  rgba(c.r, c.g, c.b, c.a).asRGBX()
+proc toRGBX*(c: dom.ColorRGBA): ColorRGBX =
+  pixie.rgba(c.r, c.g, c.b, c.a).asRGBX()
 
-proc alphaBlend*(base, overlay: ColorRGBA): ColorRGBA =
+proc alphaBlend*(base, overlay: dom.ColorRGBA): dom.ColorRGBA =
   let a = overlay.a.float32 / 255.0
   let ia = 1.0 - a
   result.r = uint8(overlay.r.float32 * a + base.r.float32 * ia)
@@ -226,7 +226,7 @@ proc drawBorder*(ctx: Context, x, y, w, h: float32,
   let rbr = rv(style.borderBottomRightRadius, w)
   let rbl = rv(style.borderBottomLeftRadius, w)
 
-  proc drawSide(x1, y1, x2, y2: float32, width: float32, col: ColorRGBA,
+  proc drawSide(x1, y1, x2, y2: float32, width: float32, col: dom.ColorRGBA,
                  bstyle: BorderStyleKind) =
     if width <= 0 or bstyle == bsNone or bstyle == bsHidden: return
     if col.a == 0: return
@@ -369,20 +369,67 @@ proc renderBackground*(rs: RenderState, node: Node, x, y, w, h: float32) =
 
   if style.backgroundColor.a > 0 or style.backgroundImage.len > 0:
     let path = roundedRectPath(x, y, w, h, rtl, rtr, rbr, rbl)
-    if style.backgroundImage.len > 0 and
-       (style.backgroundImage.startsWith("linear-gradient") or
-        style.backgroundImage.startsWith("radial-gradient")):
-      let paint = makeGradientPaint(style.backgroundImage, x, y, w, h)
-      rs.ctx.fillStyle = paint
-      rs.ctx.fill(path)
-      if style.backgroundColor.a > 0:
-        rs.ctx.fillStyle = style.backgroundColor.toPColor()
-    elif style.backgroundColor.a > 0:
+    if style.backgroundColor.a > 0:
       rs.ctx.fillStyle = style.backgroundColor.toPColor()
       rs.ctx.fill(path)
-    else:
-      rs.ctx.fillStyle = style.backgroundColor.toPColor()
-      rs.ctx.fill(path)
+
+    if style.backgroundImage.len > 0:
+      if style.backgroundImage.startsWith("linear-gradient") or
+         style.backgroundImage.startsWith("radial-gradient"):
+        let paint = makeGradientPaint(style.backgroundImage, x, y, w, h)
+        rs.ctx.fillStyle = paint
+        rs.ctx.fill(path)
+      elif style.backgroundImage.startsWith("url("):
+        let url = style.backgroundImage[4..^2].strip(chars = {'"', '\''})
+        if url notin rs.imageCache.images:
+          try:
+            rs.imageCache.images[url] = readImage(url)
+          except:
+            discard
+        if url in rs.imageCache.images:
+          let img = rs.imageCache.images[url]
+          rs.ctx.save()
+          rs.ctx.clip(path)
+
+          var drawW = w
+          var drawH = h
+          var offX = x
+          var offY = y
+
+          if style.backgroundSize == bszCover:
+            let aspect = img.width.float32 / img.height.float32
+            if w / h > aspect:
+              drawW = w
+              drawH = w / aspect
+              offY = y - (drawH - h) / 2
+            else:
+              drawH = h
+              drawW = h * aspect
+              offX = x - (drawW - w) / 2
+          elif style.backgroundSize == bszContain:
+            let aspect = img.width.float32 / img.height.float32
+            if w / h > aspect:
+              drawH = h
+              drawW = h * aspect
+              offX = x + (w - drawW) / 2
+            else:
+              drawW = w
+              drawH = w / aspect
+              offY = y + (h - drawH) / 2
+
+          if style.backgroundRepeat == brNoRepeat:
+             rs.ctx.drawImage(img, offX, offY, drawW, drawH)
+          else:
+             # Basic tiling
+             var curImgY = offY
+             while curImgY < y + h:
+               var curImgX = offX
+               while curImgX < x + w:
+                 rs.ctx.drawImage(img, curImgX, curImgY, drawW, drawH)
+                 curImgX += drawW
+               curImgY += drawH
+
+          rs.ctx.restore()
 
   drawBoxShadows(rs.ctx, x, y, w, h, style.boxShadow, rtl, rtr, rbr, rbl, true)
 
@@ -428,22 +475,16 @@ proc renderText*(rs: RenderState, text: string, x, y, maxWidth: float32,
         let tw = int(measureText(rs, displayText, style).w) + int(abs(shadow.x)) * 2 + int(shadow.blur) * 4 + 4
         let th = int(fontSize * 1.5) + int(abs(shadow.y)) * 2 + int(shadow.blur) * 4 + 4
         let shadowImg = newImage(max(tw, 1), max(th, 1))
-        let shadowCtx = newContext(shadowImg)
-        shadowCtx.font = font
-        shadowCtx.fillStyle = sc
-        shadowCtx.fillText(displayText,
+        shadowImg.fillText(font, displayText, translate(vec2(
           abs(shadow.x) + shadow.blur * 2,
-          fontSize + abs(shadow.y) + shadow.blur * 2)
+          fontSize + abs(shadow.y) + shadow.blur * 2)))
         shadowImg.blur(shadow.blur)
         rs.ctx.drawImage(shadowImg,
           x + shadow.x - abs(shadow.x) - shadow.blur * 2,
           y + shadow.y - abs(shadow.y) - shadow.blur * 2)
       else:
-        rs.ctx.font = font
-        rs.ctx.fillStyle = sc
-        rs.ctx.fillText(displayText, x + shadow.x, y + shadow.y)
+        rs.ctx.image.fillText(font, displayText, translate(vec2(x + shadow.x, y + shadow.y)))
 
-  rs.ctx.font = font
   rs.ctx.fillStyle = color
 
   let lineHeight = resolveLength(style.lineHeight,
@@ -461,12 +502,12 @@ proc renderText*(rs: RenderState, text: string, x, y, maxWidth: float32,
         case style.textAlign
         of taRight:
           let lb = font.layoutBounds(line)
-          rs.ctx.fillText(line, x + maxWidth - lb.x, curY)
+          rs.ctx.image.fillText(font, line, translate(vec2(x + maxWidth - lb.x, curY)))
         of taCenter:
           let lb = font.layoutBounds(line)
-          rs.ctx.fillText(line, x + (maxWidth - lb.x) / 2, curY)
+          rs.ctx.image.fillText(font, line, translate(vec2(x + (maxWidth - lb.x) / 2, curY)))
         else:
-          rs.ctx.fillText(line, x, curY)
+          rs.ctx.image.fillText(font, line, translate(vec2(x, curY)))
         line = word
         curY += effectiveLH
       else:
@@ -475,22 +516,22 @@ proc renderText*(rs: RenderState, text: string, x, y, maxWidth: float32,
       case style.textAlign
       of taRight:
         let lb = font.layoutBounds(line)
-        rs.ctx.fillText(line, x + maxWidth - lb.x, curY)
+        rs.ctx.image.fillText(font, line, translate(vec2(x + maxWidth - lb.x, curY)))
       of taCenter:
         let lb = font.layoutBounds(line)
-        rs.ctx.fillText(line, x + (maxWidth - lb.x) / 2, curY)
+        rs.ctx.image.fillText(font, line, translate(vec2(x + (maxWidth - lb.x) / 2, curY)))
       else:
-        rs.ctx.fillText(line, x, curY)
+        rs.ctx.image.fillText(font, line, translate(vec2(x, curY)))
   else:
     case style.textAlign
     of taRight:
       let lb = font.layoutBounds(displayText)
-      rs.ctx.fillText(displayText, x + maxWidth - lb.x, y)
+      rs.ctx.image.fillText(font, displayText, translate(vec2(x + maxWidth - lb.x, y)))
     of taCenter:
       let lb = font.layoutBounds(displayText)
-      rs.ctx.fillText(displayText, x + (maxWidth - lb.x) / 2, y)
+      rs.ctx.image.fillText(font, displayText, translate(vec2(x + (maxWidth - lb.x) / 2, y)))
     else:
-      rs.ctx.fillText(displayText, x, y)
+      rs.ctx.image.fillText(font, displayText, translate(vec2(x, y)))
 
   if style.textDecoration != tdNone:
     let bounds = font.layoutBounds(displayText)
@@ -572,7 +613,14 @@ proc renderNode*(rs: RenderState, node: Node, offsetX, offsetY: float32) =
     rs.ctx.save()
     rs.ctx.clip(clipPath)
 
-  for child in node.children:
+  var childrenToRender = node.children
+  algorithm.sort(childrenToRender, proc(a, b: Node): int =
+    let za = if a.computedStyle != nil: a.computedStyle.zIndex else: 0
+    let zb = if b.computedStyle != nil: b.computedStyle.zIndex else: 0
+    cmp(za, zb)
+  )
+
+  for child in childrenToRender:
     if child.computedStyle != nil and child.computedStyle.position in {pkAbsolute, pkFixed}:
       continue
     if child.kind == nkText:
@@ -582,7 +630,7 @@ proc renderNode*(rs: RenderState, node: Node, offsetX, offsetY: float32) =
       renderNode(rs, child, if needsLayer: -ax + bx else: offsetX,
                              if needsLayer: -ay + by else: offsetY)
 
-  for child in node.children:
+  for child in childrenToRender:
     if child.computedStyle != nil and child.computedStyle.position in {pkAbsolute, pkFixed}:
       renderNode(rs, child, if needsLayer: -ax + bx else: offsetX,
                               if needsLayer: -ay + by else: offsetY)
@@ -598,7 +646,7 @@ proc renderNode*(rs: RenderState, node: Node, offsetX, offsetY: float32) =
     let outlineW = if style.outline.kind != cvAuto: style.outline.value else: 2.0f32
     if outlineW > 0:
       let outlineColor = if style.outlineColor.a > 0: style.outlineColor
-                         else: rgba(0, 100, 200, 200)
+                         else: dom.rgba(0, 100, 200, 200)
       let op = newPath()
       op.rect(bx - outlineW, by - outlineW, box.borderWidth + outlineW * 2, box.borderHeight + outlineW * 2)
       rs.ctx.strokeStyle = outlineColor.toPColor()
@@ -614,8 +662,22 @@ proc renderNode*(rs: RenderState, node: Node, offsetX, offsetY: float32) =
     rs.ctx.drawImage(layerImg, ax, ay)
     rs.ctx.restore()
 
+proc collectNodes(node: Node, offsetX, offsetY: float32, list: var seq[tuple[node: Node, x, y: float32, z: int32]]) =
+  if node.computedStyle == nil or node.computedStyle.display == dkNone: return
+  let box = node.layoutBox
+  if box == nil: return
+  let ax = offsetX + box.x
+  let ay = offsetY + box.y
+  list.add((node, ax, ay, node.computedStyle.zIndex))
+  for child in node.children:
+    collectNodes(child, ax, ay, list)
+
 proc render*(rs: RenderState, root: Node) =
   rs.ctx.clearRect(0, 0, rs.viewportWidth, rs.viewportHeight)
+  # Simple rendering for now, but we want to eventually support z-index.
+  # A full implementation would need to handle stacking contexts properly.
+  # For now, let's keep the recursive approach as it handles clipping better,
+  # but maybe we can sort immediate children?
   renderNode(rs, root, 0, 0)
 
 proc getImage*(rs: RenderState): Image =

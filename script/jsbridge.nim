@@ -1,4 +1,4 @@
-import std/[tables, strutils, sequtils, times, math, options, hashes]
+import std/[tables, strutils, sequtils, times, math, options, hashes, os]
 import ../core/dom
 import ../css/resolver
 
@@ -28,7 +28,7 @@ type
     scriptLog*: seq[string]
 
 proc newJsBridge*(dom: Node): JsBridge =
-  JsBridge(
+  result = JsBridge(
     dom: dom,
     timers: @[],
     timerCounter: 1000,
@@ -36,6 +36,16 @@ proc newJsBridge*(dom: Node): JsBridge =
     pendingEvals: @[],
     scriptLog: @[]
   )
+  result.nativeProcs["__nim_loadStorage"] = proc(args: seq[string]): string =
+    if fileExists(".nimax_localstorage.json"):
+      try: return readFile(".nimax_localstorage.json")
+      except: return "{}"
+    "{}"
+  result.nativeProcs["__nim_saveStorage"] = proc(args: seq[string]): string =
+    if args.len > 0:
+      try: writeFile(".nimax_localstorage.json", args[0])
+      except: discard
+    ""
 
 proc registerNative*(b: JsBridge, name: string, cb: NativeCallback) =
   b.nativeProcs[name] = cb
@@ -157,10 +167,24 @@ global.performance = { now: function() { return Date.now() - __perfStart; } };
 global.console = {
   _log: function(level, args) {
     var msg = args.map(function(a) {
-      if (typeof a === 'object') { try { return JSON.stringify(a); } catch(e) { return String(a); } }
+      if (a === null) return 'null';
+      if (a === undefined) return 'undefined';
+      if (typeof a === 'object') {
+        try {
+          return JSON.stringify(a, (key, value) => {
+            if (typeof value === 'object' && value !== null) {
+              if (value.__nimId) return '[Node ' + value.__nimId + ']';
+            }
+            return value;
+          }, 2);
+        } catch(e) { return '[Object]'; }
+      }
       return String(a);
     }).join(' ');
     __nim_log(level, msg);
+  },
+  table: function(data) {
+     this.log(data);
   },
   log:   function() { this._log('log',   Array.prototype.slice.call(arguments)); },
   error: function() { this._log('error', Array.prototype.slice.call(arguments)); },
@@ -226,12 +250,31 @@ function __getListeners(nimId, type) {
 }
 
 global.__dispatchNativeEvent = function(nimId, type, data) {
+  if (nimId === 0) { // Window event
+    var arr = __getListeners('window', type);
+    var arr2 = __getListeners('window', '*');
+    var all = arr.concat(arr2);
+    for (var i = 0; i < all.length; i++) {
+      try { all[i](data); } catch(e) { console.error('window event handler err:', e); }
+    }
+    return;
+  }
   var arr = __getListeners(nimId, type);
   var arr2 = __getListeners(nimId, '*');
   var all = arr.concat(arr2);
   for (var i = 0; i < all.length; i++) {
     try { all[i](data); } catch(e) { console.error('event handler err:', e); }
   }
+};
+
+global.addEventListener = function(type, fn) {
+  var arr = __getListeners('window', type);
+  if (arr.indexOf(fn) < 0) arr.push(fn);
+};
+global.removeEventListener = function(type, fn) {
+  var arr = __getListeners('window', type);
+  var idx = arr.indexOf(fn);
+  if (idx >= 0) arr.splice(idx, 1);
 };
 
 function __makeNode(nimId) {
@@ -910,11 +953,20 @@ global.__nim_native = function(name) {
 
 global.localStorage = (function() {
   var store = {};
+  try {
+    var saved = __nim_callNative("__nim_loadStorage", "");
+    if (saved) store = JSON.parse(saved);
+  } catch(e) {}
+
+  function save() {
+    __nim_callNative("__nim_saveStorage", JSON.stringify(store));
+  }
+
   return {
     getItem: function(k) { return store[k] !== undefined ? store[k] : null; },
-    setItem: function(k,v) { store[k] = String(v); },
-    removeItem: function(k) { delete store[k]; },
-    clear: function() { store = {}; },
+    setItem: function(k,v) { store[k] = String(v); save(); },
+    removeItem: function(k) { delete store[k]; save(); },
+    clear: function() { store = {}; save(); },
     key: function(i) { return Object.keys(store)[i] || null; },
     get length() { return Object.keys(store).length; }
   };
