@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>NiMax Demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: sans-serif;
+      background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+      min-height: 100vh;
+      color: #fff;
+      padding: 40px;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+
+    .header h1 {
+      font-size: 48px;
+      font-weight: 700;
+      letter-spacing: -1px;
+      background: linear-gradient(90deg, #a78bfa, #60a5fa, #34d399);
+      -webkit-background-clip: text;
+      color: transparent;
+      margin-bottom: 12px;
+    }
+
+    .header p {
+      font-size: 18px;
+      color: rgba(255,255,255,0.6);
+    }
+
+    .grid {
+      display: flex;
+      flex-direction: row;
+      flex-wrap: wrap;
+      gap: 24px;
+      justify-content: center;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 16px;
+      padding: 28px;
+      width: 320px;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 60px rgba(167,139,250,0.25);
+    }
+
+    .card h2 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: #a78bfa;
+    }
+
+    .card p {
+      font-size: 14px;
+      line-height: 1.6;
+      color: rgba(255,255,255,0.65);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-top: 16px;
+    }
+
+    .badge-purple { background: rgba(167,139,250,0.2); color: #a78bfa; }
+    .badge-blue   { background: rgba(96,165,250,0.2);  color: #60a5fa; }
+    .badge-green  { background: rgba(52,211,153,0.2);  color: #34d399; }
+    .badge-orange { background: rgba(251,146,60,0.2);  color: #fb923c; }
+
+    .counter-section {
+      margin-top: 48px;
+      text-align: center;
+    }
+
+    .counter-box {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 20px;
+      padding: 36px 48px;
+    }
+
+    .counter-val {
+      font-size: 72px;
+      font-weight: 700;
+      color: #60a5fa;
+      min-width: 120px;
+      text-align: center;
+    }
+
+    .btn-row {
+      display: flex;
+      flex-direction: row;
+      gap: 12px;
+    }
+
+    .btn {
+      padding: 12px 24px;
+      border-radius: 10px;
+      border: none;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.15s;
+    }
+
+    .btn:hover { opacity: 0.85; transform: scale(1.04); }
+    .btn:active { transform: scale(0.97); }
+
+    .btn-dec  { background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff; }
+    .btn-inc  { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; }
+    .btn-rst  { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); }
+
+    .input-section {
+      margin-top: 48px;
+      max-width: 480px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .input-section h2 {
+      font-size: 22px;
+      font-weight: 600;
+      color: #60a5fa;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+
+    .input-row {
+      display: flex;
+      flex-direction: row;
+      gap: 12px;
+    }
+
+    .text-input {
+      flex: 1;
+      padding: 12px 16px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.08);
+      color: #fff;
+      font-size: 16px;
+    }
+
+    .text-input:focus {
+      outline: none;
+      border-color: #60a5fa;
+      box-shadow: 0 0 0 3px rgba(96,165,250,0.25);
+    }
+
+    .output-box {
+      margin-top: 16px;
+      padding: 16px;
+      border-radius: 10px;
+      background: rgba(52,211,153,0.1);
+      border: 1px solid rgba(52,211,153,0.25);
+      font-size: 15px;
+      color: #34d399;
+      min-height: 52px;
+      word-break: break-all;
+    }
+
+    .footer {
+      margin-top: 60px;
+      text-align: center;
+      font-size: 13px;
+      color: rgba(255,255,255,0.3);
+    }
+
+    .anim-bar {
+      height: 6px;
+      border-radius: 3px;
+      background: linear-gradient(90deg, #a78bfa, #60a5fa, #34d399);
+      margin-top: 12px;
+      animation: bar-pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes bar-pulse {
+      0%   { opacity: 0.4; transform: scaleX(0.7); }
+      50%  { opacity: 1.0; transform: scaleX(1.0); }
+      100% { opacity: 0.4; transform: scaleX(0.7); }
+    }
+
+    #fps-display {
+      position: fixed;
+      top: 12px;
+      right: 16px;
+      font-size: 12px;
+      color: rgba(255,255,255,0.3);
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="fps-display">NiMax v1.0</div>
+
+  <div class="header">
+    <h1>NiMax Engine</h1>
+    <p>High-performance embeddable UI · Pixie rendering · QuickJS scripting · Flexbox layout</p>
+    <div class="anim-bar"></div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Pixie Rendering</h2>
+      <p>Full 2D vector pipeline with SIMD-accelerated rasterization, anti-aliased text, masking, blending modes, and CSS filters.</p>
+      <span class="badge badge-purple">Pixie 5.0</span>
+    </div>
+    <div class="card">
+      <h2>Flex Layout</h2>
+      <p>Complete Flexbox implementation with multi-line wrap, justify-content, align-items, gap, order, grow and shrink factors.</p>
+      <span class="badge badge-blue">CSS3 Box</span>
+    </div>
+    <div class="card">
+      <h2>QuickJS Engine</h2>
+      <p>Embedded JS runtime with full DOM API, event bubbling, mutations, timers, Promises, fetch, localStorage, and native bridges.</p>
+      <span class="badge badge-green">ES2020</span>
+    </div>
+    <div class="card">
+      <h2>CSS Cascade</h2>
+      <p>Selector specificity engine, inheritance, @keyframes, CSS transitions, computed styles, pseudo-classes, and media queries.</p>
+      <span class="badge badge-orange">CSS Level 3</span>
+    </div>
+  </div>
+
+  <div class="counter-section">
+    <div class="counter-box">
+      <div class="counter-val" id="count">0</div>
+      <div class="btn-row">
+        <button class="btn btn-dec" id="btn-dec">− Dec</button>
+        <button class="btn btn-rst" id="btn-rst">Reset</button>
+        <button class="btn btn-inc" id="btn-inc">+ Inc</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="input-section">
+    <h2>Live Input</h2>
+    <div class="input-row">
+      <input class="text-input" id="txt-input" type="text" placeholder="Type something...">
+      <button class="btn btn-inc" id="btn-submit" style="white-space:nowrap">Send →</button>
+    </div>
+    <div class="output-box" id="output">Output will appear here...</div>
+  </div>
+
+  <div class="footer">
+    Built with Nim · ORC memory · Pixie · QuickJS · MIT License
+  </div>
+
+  <script>
+    (function() {
+      var count = 0;
+
+      function updateCounter() {
+        var el = document.getElementById('count');
+        if (el) el.textContent = String(count);
+      }
+
+      var btnInc = document.getElementById('btn-inc');
+      if (btnInc) btnInc.addEventListener('click', function() {
+        count++;
+        updateCounter();
+      });
+
+      var btnDec = document.getElementById('btn-dec');
+      if (btnDec) btnDec.addEventListener('click', function() {
+        count--;
+        updateCounter();
+      });
+
+      var btnRst = document.getElementById('btn-rst');
+      if (btnRst) btnRst.addEventListener('click', function() {
+        count = 0;
+        updateCounter();
+      });
+
+      var btnSubmit = document.getElementById('btn-submit');
+      var txtInput  = document.getElementById('txt-input');
+      var output    = document.getElementById('output');
+
+      function handleSubmit() {
+        var val = txtInput ? txtInput.value : '';
+        if (!val || val.trim() === '') {
+          if (output) output.textContent = 'Please type something first.';
+          return;
+        }
+        var reversed = val.split('').reverse().join('');
+        var upper    = val.toUpperCase();
+        var len      = val.length;
+        if (output) {
+          output.textContent =
+            'Input: "' + val + '" (' + len + ' chars)\n' +
+            'Upper: ' + upper + '\n' +
+            'Reversed: ' + reversed;
+        }
+      }
+
+      if (btnSubmit) btnSubmit.addEventListener('click', handleSubmit);
+      if (txtInput) txtInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') handleSubmit();
+      });
+
+      var ticker = 0;
+      setInterval(function() {
+        ticker++;
+        var fps = document.getElementById('fps-display');
+        if (fps) fps.textContent = 'NiMax v1.0 | tick:' + ticker;
+      }, 1000);
+
+      console.log('NiMax demo script loaded. DOM ready:', document.body ? 'yes' : 'no');
+    })();
+  </script>
+</body>
+</html>
