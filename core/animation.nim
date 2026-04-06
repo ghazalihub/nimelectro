@@ -248,8 +248,8 @@ proc tick*(eng: AnimationEngine): bool =
                         else: (elapsed mod anim.duration) / anim.duration
     let dirProgress = (case anim.direction
       of adReverse: 1.0f32 - iterProgress
-      of adAlternate: (if int(elapsed / anim.duration) mod 2 == 0: iterProgress else: 1 - iterProgress)
-      of adAlternateReverse: (if int(elapsed / anim.duration) mod 2 == 0: 1 - iterProgress else: iterProgress)
+      of adAlternate: (if int(elapsed / anim.duration) mod 2 == 0: iterProgress else: 1.0f32 - iterProgress)
+      of adAlternateReverse: (if int(elapsed / anim.duration) mod 2 == 0: 1.0f32 - iterProgress else: iterProgress)
       else: iterProgress)
     let t = anim.easing(dirProgress)
 
