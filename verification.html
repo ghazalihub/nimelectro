@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  :root {
+    --main-bg: #f0f0f0;
+    --box-color: coral;
+  }
+  body {
+    background-color: var(--main-bg);
+    font-family: sans-serif;
+    padding: 20px;
+  }
+  .grid-container {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 10px;
+    background: white;
+    padding: 10px;
+    border: 1px solid #ccc;
+  }
+  .grid-item {
+    background: var(--box-color);
+    padding: 20px;
+    color: white;
+    text-align: center;
+  }
+  .wrapping-text {
+    width: 200px;
+    border: 1px solid blue;
+    padding: 10px;
+    margin-top: 20px;
+    background: #eef;
+  }
+  .z-container {
+    position: relative;
+    height: 100px;
+    margin-top: 20px;
+  }
+  .z-box {
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .box1 { background: red; top: 0; left: 0; z-index: 2; }
+  .box2 { background: green; top: 20px; left: 20px; z-index: 1; }
+  .inline-block-box {
+    display: inline-block;
+    width: 80px;
+    height: 40px;
+    background: gold;
+    margin: 5px;
+    border: 1px solid black;
+    text-align: center;
+    line-height: 40px;
+  }
+</style>
+</head>
+<body>
+  <h1>NiMax Enhancement Verification</h1>
+
+  <div class="grid-container">
+    <div class="grid-item">Grid 1</div>
+    <div class="grid-item">Grid 2 (Double Wide)</div>
+  </div>
+
+  <div class="wrapping-text">
+    This is a long piece of text that should definitely wrap into multiple lines because the container width is restricted to only two hundred pixels.
+  </div>
+
+  <div class="z-container">
+    <div class="z-box box1">Z2</div>
+    <div class="z-box box2">Z1</div>
+  </div>
+
+  <div style="margin-top: 20px;">
+    <div class="inline-block-box">IB 1</div>
+    <div class="inline-block-box">IB 2</div>
+    <div class="inline-block-box">IB 3</div>
+  </div>
+</body>
+</html>

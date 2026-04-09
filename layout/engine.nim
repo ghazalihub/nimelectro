@@ -1,6 +1,8 @@
-import std/[math, algorithm, sequtils, strutils, options]
+import std/[math, algorithm, sequtils, strutils, options, tables]
+import pixie
 import ../core/dom
 import ../css/resolver
+import ../core/utils/font_manager
 
 type
   LayoutContext* = ref object
@@ -9,13 +11,15 @@ type
     rootFontSize*: float32
     containingBlocks*: seq[tuple[w, h: float32]]
     floats*: seq[tuple[node: Node, x, y, w, h: float32, side: FloatKind]]
+    fontCache*: FontCache
 
 proc newLayoutContext*(vw, vh: float32): LayoutContext =
   LayoutContext(
     viewportWidth: vw,
     viewportHeight: vh,
     rootFontSize: 16.0,
-    containingBlocks: @[(vw, vh)]
+    containingBlocks: @[(vw, vh)],
+    fontCache: newFontCache()
   )
 
 proc resolveLength*(cv: CssValue, base: float32, fontSize: float32,
@@ -98,45 +102,87 @@ proc layoutBlock*(ctx: LayoutContext, node: Node, containingWidth: float32,
     paddingLeft: paddingLeft,
     paddingTop: paddingTop,
     paddingRight: paddingRight,
-    paddingBottom: paddingBottom
+    paddingBottom: paddingBottom,
+    fontSize: fontSize,
+    lineHeight: lineHeight
   )
 
-  var contentHeight: float32 = 0
   var childY: float32 = paddingTop
+  var curLineX: float32 = paddingLeft
+  var curLineHeight: float32 = 0
+  var currentLine: LineBox
+  currentLine.y = childY
+
+  proc flushLine(box: var LayoutBox, cY: var float32, cLX: var float32, cLH: var float32, curLine: var LineBox) =
+    if curLine.fragments.len > 0:
+      curLine.height = cLH
+      # Simple baseline: 80% of height
+      curLine.baseline = cLH * 0.8
+      for frag in mitems(curLine.fragments):
+        frag.y = cY + (cLH - frag.height) # Bottom align in line for now
+        if frag.node != nil and frag.node.kind == nkElement and frag.node.layoutBox != nil:
+          frag.node.layoutBox.y = frag.y + frag.node.layoutBox.marginTop
+      box.lineBoxes.add(curLine)
+      cY += cLH
+      cLX = paddingLeft
+      cLH = 0
+      curLine = LineBox(y: cY)
 
   for child in node.children:
     if child.kind == nkText:
+      let font = ctx.fontCache.getFont(style.fontFamily, fontSize, style.fontWeight, style.fontStyle)
       let text = child.textContent
-      if text.strip().len == 0: continue
-      let textH = lineHeight * ceil(float32(text.len) * fontSize * 0.6 / max(contentWidth, 1))
-      childY += max(textH, lineHeight)
+      let words = text.split(' ')
+      for i, word in words:
+        let s = if i == 0: word else: " " & word
+        let bounds = if font.typeface != nil: font.layoutBounds(s) else: vec2(float32(s.len) * fontSize * 0.6, lineHeight)
+
+        if curLineX + bounds.x > contentWidth + paddingLeft and curLineX > paddingLeft:
+          flushLine(box, childY, curLineX, curLineHeight, currentLine)
+
+        currentLine.fragments.add(InlineFragment(
+          node: child,
+          x: curLineX,
+          width: bounds.x,
+          height: bounds.y,
+          text: s
+        ))
+        curLineHeight = max(curLineHeight, bounds.y)
+        curLineX += bounds.x
       continue
+
     if child.computedStyle == nil: continue
     let childStyle = child.computedStyle
     if childStyle.display == dkNone: continue
     if childStyle.position in {pkAbsolute, pkFixed}: continue
 
-    let childBox = layoutNode(ctx, child, contentWidth, containingHeight, fontSize)
-    child.layoutBox = childBox
-
-    let childMarginTop = childBox.marginTop
-    let childMarginBottom = childBox.marginBottom
-
-    if childStyle.display == dkBlock or childStyle.display == dkFlex or
-       childStyle.display == dkGrid or childStyle.display == dkTable or
-       childStyle.display == dkListItem:
-      var effectiveMarginTop = childMarginTop
-      if childY == paddingTop and contentHeight == 0:
-        effectiveMarginTop = 0
-      childBox.y = childY + effectiveMarginTop
+    if childStyle.display in {dkBlock, dkFlex, dkGrid, dkTable, dkListItem}:
+      flushLine(box, childY, curLineX, curLineHeight, currentLine)
+      let childBox = layoutNode(ctx, child, contentWidth, containingHeight, fontSize)
+      child.layoutBox = childBox
+      childBox.y = childY + childBox.marginTop
       childBox.x = paddingLeft + childBox.marginLeft
-      childY = childBox.y + childBox.height + childMarginBottom
-    else:
-      childBox.y = childY
-      childBox.x = paddingLeft
-      childY += childBox.height + childMarginTop + childMarginBottom
+      childY = childBox.y + childBox.height + childBox.marginBottom
+      currentLine.y = childY
+    else: # Inline or Inline-Block
+      let childBox = layoutNode(ctx, child, contentWidth, containingHeight, fontSize)
+      child.layoutBox = childBox
+      if curLineX + childBox.width + childBox.marginLeft + childBox.marginRight > contentWidth + paddingLeft and curLineX > paddingLeft:
+        flushLine(box, childY, curLineX, curLineHeight, currentLine)
 
-  contentHeight = childY + paddingBottom
+      childBox.x = curLineX + childBox.marginLeft
+      # childBox.y will be set later in flushLine or relative to childY
+      currentLine.fragments.add(InlineFragment(
+        node: child,
+        x: childBox.x,
+        width: childBox.width + childBox.marginLeft + childBox.marginRight,
+        height: childBox.height + childBox.marginTop + childBox.marginBottom
+      ))
+      curLineX += childBox.width + childBox.marginLeft + childBox.marginRight
+      curLineHeight = max(curLineHeight, childBox.height + childBox.marginTop + childBox.marginBottom)
+
+  flushLine(box, childY, curLineX, curLineHeight, currentLine)
+  var contentHeight = childY + paddingBottom
 
   if style.height.kind != cvAuto:
     contentHeight = rv(style.height, containingHeight)
@@ -154,8 +200,6 @@ proc layoutBlock*(ctx: LayoutContext, node: Node, containingWidth: float32,
   box.height = contentHeight + paddingTop + paddingBottom + borderTop + borderBottom
   box.contentX = borderLeft + paddingLeft
   box.contentY = borderTop + paddingTop
-  box.borderX = 0
-  box.borderY = 0
   box.borderWidth = box.width
   box.borderHeight = box.height
   box.clientWidth = contentWidth + paddingLeft + paddingRight
@@ -223,7 +267,6 @@ proc layoutFlex*(ctx: LayoutContext, node: Node, containingWidth: float32,
   let isReverse = style.flexDirection in {fdRowReverse, fdColumnReverse}
   let isWrap = style.flexWrap in {fwWrap, fwWrapReverse}
   let mainContainerSize = if isRow: containerWidth else: containerHeight
-  let crossContainerSize = if isRow: containerHeight else: containerWidth
   let gap = rv(style.columnGap, containerWidth)
   let rowGap = rv(style.rowGap, containerWidth)
 
@@ -233,7 +276,6 @@ proc layoutFlex*(ctx: LayoutContext, node: Node, containingWidth: float32,
     if child.computedStyle.display == dkNone: continue
     if child.computedStyle.position in {pkAbsolute, pkFixed}: continue
     let cs = child.computedStyle
-    let childFontSize = effectiveFontSize(cs, fontSize, ctx.rootFontSize)
     var item = FlexItem(
       node: child,
       flexGrow: cs.flexGrow,
@@ -276,8 +318,6 @@ proc layoutFlex*(ctx: LayoutContext, node: Node, containingWidth: float32,
     items: seq[int]
     mainSize: float32
     crossSize: float32
-    mainStart: float32
-    crossStart: float32
 
   var lines: seq[FlexLine]
   if not isWrap:
@@ -308,7 +348,6 @@ proc layoutFlex*(ctx: LayoutContext, node: Node, containingWidth: float32,
 
   for lineIdx in 0..<lines.len:
     let line = addr lines[lineIdx]
-    let lineGap = if line[].items.len > 1: gap * float32(line[].items.len - 1) else: 0
     let freeSpace = mainContainerSize - line[].mainSize
     var totalGrow: float32 = 0
     var totalShrink: float32 = 0
@@ -340,38 +379,28 @@ proc layoutFlex*(ctx: LayoutContext, node: Node, containingWidth: float32,
   for line in lines: totalCrossSize += line.crossSize
   if lines.len > 1: totalCrossSize += rowGap * float32(lines.len - 1)
 
-  if containerHeight == 0: containerHeight = totalCrossSize + paddingTop + paddingBottom
-
   var crossOffset: float32 = if isRow: paddingTop else: paddingLeft
   for lineIdx in 0..<lines.len:
     let line = addr lines[lineIdx]
     var mainOffset: float32 = if isRow: paddingLeft else: paddingTop
-    let lineGap = if line[].items.len > 1: gap * float32(line[].items.len - 1) else: 0
-    let usedMain = block:
-      var s: float32 = 0
-      for i in line[].items: s += items[i].mainSize
-      s + lineGap
+    let usedMain = line[].mainSize
     let freeMain = (if isRow: containerWidth else: containerHeight) - usedMain -
                    (if isRow: paddingLeft + paddingRight else: paddingTop + paddingBottom)
+    var spacing: float32 = 0
     case style.justifyContent
     of jcFlexEnd, jcEnd: mainOffset += freeMain
     of jcCenter: mainOffset += freeMain / 2
     of jcSpaceBetween:
-      if line[].items.len > 1:
-        let extraGap = freeMain / float32(line[].items.len - 1)
-        for ki in 0..<line[].items.len:
-          let i = line[].items[ki]
-          items[i].mainStart = mainOffset
-          mainOffset += items[i].mainSize + gap + (if ki < line[].items.len - 1: extraGap else: 0)
-        line[].mainStart = crossOffset
-        crossOffset += line[].crossSize + rowGap
-        continue
+        if line[].items.len > 1:
+            spacing = freeMain / float32(line[].items.len - 1)
     of jcSpaceAround:
-      let perItem = freeMain / float32(line[].items.len)
-      mainOffset += perItem / 2
+        if line[].items.len > 0:
+            spacing = freeMain / float32(line[].items.len)
+            mainOffset += spacing / 2
     of jcSpaceEvenly:
-      let slots = float32(line[].items.len + 1)
-      mainOffset += freeMain / slots
+        if line[].items.len > 0:
+            spacing = freeMain / float32(line[].items.len + 1)
+            mainOffset += spacing
     else: discard
 
     for ki in 0..<line[].items.len:
@@ -390,22 +419,8 @@ proc layoutFlex*(ctx: LayoutContext, node: Node, containingWidth: float32,
       items[i].crossStart = crossOffset + (if effectiveAlign == asFlexEnd: crossFree
                                             elif effectiveAlign == asCenter: crossFree / 2
                                             else: 0.0f32)
-      mainOffset += items[i].mainSize
-      if ki < line[].items.len - 1: mainOffset += gap
-      case style.justifyContent
-      of jcSpaceAround:
-        let perItem = freeMain / float32(line[].items.len)
-        mainOffset += perItem
-      of jcSpaceEvenly:
-        let slots = float32(line[].items.len + 1)
-        mainOffset += freeMain / slots
-      else: discard
-    line[].mainStart = crossOffset
+      mainOffset += items[i].mainSize + gap + spacing
     crossOffset += line[].crossSize + rowGap
-
-  var containerH = containerHeight
-  if style.height.kind != cvAuto:
-    containerH = rv(style.height, containingHeight)
 
   for item in items:
     let b = item.box
@@ -420,7 +435,9 @@ proc layoutFlex*(ctx: LayoutContext, node: Node, containingWidth: float32,
     marginLeft: marginLeft, marginTop: marginTop,
     marginRight: marginRight, marginBottom: marginBottom,
     paddingLeft: paddingLeft, paddingTop: paddingTop,
-    paddingRight: paddingRight, paddingBottom: paddingBottom
+    paddingRight: paddingRight, paddingBottom: paddingBottom,
+    fontSize: fontSize,
+    lineHeight: effectiveLineHeight(style, fontSize)
   )
 
   let finalH = if style.height.kind != cvAuto: rv(style.height, containingHeight)
@@ -442,6 +459,7 @@ proc layoutInline*(ctx: LayoutContext, node: Node, containingWidth: float32,
                     containingHeight: float32, parentFontSize: float32): LayoutBox =
   let style = node.computedStyle
   let fontSize = effectiveFontSize(style, parentFontSize, ctx.rootFontSize)
+  let lineHeight = effectiveLineHeight(style, fontSize)
 
   proc rv(cv: CssValue, base: float32): float32 =
     resolveLength(cv, base, fontSize, ctx.rootFontSize, ctx.viewportWidth, ctx.viewportHeight)
@@ -457,17 +475,22 @@ proc layoutInline*(ctx: LayoutContext, node: Node, containingWidth: float32,
   let marginTop = rv(style.marginTop, containingWidth)
   let marginBottom = rv(style.marginBottom, containingWidth)
 
-  let lineHeight = effectiveLineHeight(style, fontSize)
   var textWidth: float32 = 0
   for child in node.children:
     if child.kind == nkText:
-      textWidth += float32(child.textContent.len) * fontSize * 0.6
+      let font = ctx.fontCache.getFont(style.fontFamily, fontSize, style.fontWeight, style.fontStyle)
+      if font.typeface != nil:
+        textWidth += font.layoutBounds(child.textContent).x
+      else:
+        textWidth += float32(child.textContent.len) * fontSize * 0.6
 
   var box = LayoutBox(
     marginLeft: marginLeft, marginTop: marginTop,
     marginRight: marginRight, marginBottom: marginBottom,
     paddingLeft: paddingLeft, paddingTop: paddingTop,
-    paddingRight: paddingRight, paddingBottom: paddingBottom
+    paddingRight: paddingRight, paddingBottom: paddingBottom,
+    fontSize: fontSize,
+    lineHeight: lineHeight
   )
   let w = textWidth + paddingLeft + paddingRight + borderLeft + borderRight
   box.width = min(w, containingWidth)
@@ -478,8 +501,91 @@ proc layoutInline*(ctx: LayoutContext, node: Node, containingWidth: float32,
   box.contentY = paddingTop
   box
 
+proc layoutGrid*(ctx: LayoutContext, node: Node, containingWidth: float32,
+                  containingHeight: float32, parentFontSize: float32): LayoutBox =
+  let style = node.computedStyle
+  let fontSize = effectiveFontSize(style, parentFontSize, ctx.rootFontSize)
+  proc rv(cv: CssValue, base: float32): float32 =
+    resolveLength(cv, base, fontSize, ctx.rootFontSize, ctx.viewportWidth, ctx.viewportHeight)
+
+  let paddingLeft = rv(style.paddingLeft, containingWidth)
+  let paddingRight = rv(style.paddingRight, containingWidth)
+  let paddingTop = rv(style.paddingTop, containingWidth)
+  let paddingBottom = rv(style.paddingBottom, containingWidth)
+  let borderLeft = rv(style.borderLeftWidth, containingWidth)
+  let borderRight = rv(style.borderRightWidth, containingWidth)
+  let borderTop = rv(style.borderTopWidth, containingWidth)
+  let borderBottom = rv(style.borderBottomWidth, containingWidth)
+
+  let containerWidth = if style.width.kind != cvAuto: rv(style.width, containingWidth)
+                       else: containingWidth - paddingLeft - paddingRight - borderLeft - borderRight
+
+  var colSpecs = style.gridTemplateColumns.splitWhitespace()
+  if colSpecs.len == 0: colSpecs = @["1fr"]
+  let numCols = colSpecs.len
+  var colWidths = newSeq[float32](numCols)
+  var totalFr: float32 = 0
+  var fixedWidth: float32 = 0
+  let gap = rv(style.columnGap, containerWidth)
+  let totalGapW = gap * (numCols - 1).float32
+
+  for i, spec in colSpecs:
+    if spec.endsWith("fr"):
+      totalFr += spec.replace("fr", "").parseFloat().float32
+    else:
+      colWidths[i] = parseCssValue(spec).resolveValue(containerWidth, ctx.rootFontSize, ctx.viewportWidth, ctx.viewportHeight)
+      fixedWidth += colWidths[i]
+
+  let remainingW = max(0.0f32, containerWidth - fixedWidth - totalGapW)
+  for i, spec in colSpecs:
+    if spec.endsWith("fr") and totalFr > 0:
+      colWidths[i] = remainingW * (spec.replace("fr", "").parseFloat().float32 / totalFr)
+
+  var items: seq[Node]
+  for child in node.children:
+    if child.computedStyle != nil and child.computedStyle.display != dkNone:
+      items.add(child)
+
+  var curY = paddingTop
+  var rowHeight: float32 = 0
+  for i, child in items:
+    let col = i mod numCols
+    let colW = colWidths[col]
+    let childBox = layoutNode(ctx, child, colW, 999999, fontSize)
+    child.layoutBox = childBox
+    childBox.x = paddingLeft
+    for j in 0..<col: childBox.x += colWidths[j] + gap
+    childBox.y = curY
+    rowHeight = max(rowHeight, childBox.height)
+    if col == numCols - 1 or i == items.len - 1:
+      curY += rowHeight + rv(style.rowGap, containerWidth)
+      rowHeight = 0
+
+  let finalH = if style.height.kind != cvAuto: rv(style.height, containingHeight)
+               else: curY + paddingBottom
+
+  LayoutBox(
+    width: containerWidth + paddingLeft + paddingRight + borderLeft + borderRight,
+    height: finalH + borderTop + borderBottom,
+    contentWidth: containerWidth,
+    contentHeight: finalH - paddingTop - paddingBottom,
+    paddingLeft: paddingLeft, paddingTop: paddingTop,
+    paddingRight: paddingRight, paddingBottom: paddingBottom,
+    fontSize: fontSize,
+    lineHeight: effectiveLineHeight(style, fontSize)
+  )
+
 proc layoutNode*(ctx: LayoutContext, node: Node, containingWidth: float32,
                   containingHeight: float32, parentFontSize: float32): LayoutBox =
+  if node.kind == nkDocument:
+    var maxW, maxH: float32
+    for child in node.children:
+      let childBox = layoutNode(ctx, child, containingWidth, containingHeight, parentFontSize)
+      child.layoutBox = childBox
+      maxW = max(maxW, childBox.width)
+      maxH = max(maxH, childBox.height)
+    return LayoutBox(width: maxW, height: maxH, fontSize: parentFontSize)
+
   if node.computedStyle == nil:
     return LayoutBox(width: 0, height: 0)
   let style = node.computedStyle
@@ -488,6 +594,8 @@ proc layoutNode*(ctx: LayoutContext, node: Node, containingWidth: float32,
     return LayoutBox(width: 0, height: 0)
   of dkFlex, dkInlineFlex:
     return layoutFlex(ctx, node, containingWidth, containingHeight, parentFontSize)
+  of dkGrid, dkInlineGrid:
+    return layoutGrid(ctx, node, containingWidth, containingHeight, parentFontSize)
   of dkInline:
     return layoutInline(ctx, node, containingWidth, containingHeight, parentFontSize)
   of dkInlineBlock:

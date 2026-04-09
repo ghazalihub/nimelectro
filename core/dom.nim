@@ -320,6 +320,7 @@ type
     borderX*, borderY*, borderWidth*, borderHeight*: float32
     marginLeft*, marginTop*, marginRight*, marginBottom*: float32
     paddingLeft*, paddingTop*, paddingRight*, paddingBottom*: float32
+    fontSize*, lineHeight*: float32
     lineBoxes*: seq[LineBox]
 
   LineBox* = object

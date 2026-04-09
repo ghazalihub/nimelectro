@@ -577,9 +577,33 @@ proc resolveValue*(cv: CssValue, base: float32, rootBase: float32 = 16.0,
   of cvFr: cv.value
   else: 0.0
 
+proc resolveCssVariables(v: string, style: ComputedStyle): string =
+  if "var(" notin v: return v
+  var res = v
+  while "var(" in res:
+    let start = res.find("var(")
+    var depth = 1
+    var i = start + 4
+    var varName = ""
+    while i < res.len and depth > 0:
+      if res[i] == '(': inc depth
+      elif res[i] == ')': dec depth
+      if depth > 0: varName.add(res[i])
+      inc i
+    let fullVar = res[start..<i]
+    let parts = varName.split(',', 1)
+    let name = parts[0].strip()
+    let fallback = if parts.len > 1: parts[1].strip() else: ""
+    let val = style.variables.getOrDefault(name, fallback)
+    res = res.replace(fullVar, val)
+  res
+
 proc applyDeclaration*(style: ComputedStyle, prop: string, value: string,
                         parentStyle: ComputedStyle = nil) =
-  let v = value.strip()
+  let v = resolveCssVariables(value.strip(), style)
+  if prop.startsWith("--"):
+    style.variables[prop] = v
+    return
   case prop
   of "display":
     if v == "none": style.display = dkNone

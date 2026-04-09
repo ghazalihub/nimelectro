@@ -4,13 +4,9 @@ import pixie/fontformats/opentype
 import ../core/dom
 import ../css/resolver
 import ../layout/engine
+import ../core/utils/font_manager
 
 type
-  FontCache* = ref object
-    fonts*: Table[string, Font]
-    typefaces*: Table[string, Typeface]
-    defaultTypeface*: Typeface
-
   ImageCache* = ref object
     images*: Table[string, Image]
 
@@ -32,12 +28,6 @@ type
     offset*: float32
     color*: dom.ColorRGBA
 
-proc newFontCache*(): FontCache =
-  FontCache(
-    fonts: initTable[string, Font](),
-    typefaces: initTable[string, Typeface]()
-  )
-
 proc newRenderState*(width, height: int, scale: float32 = 1.0): RenderState =
   let img = newImage(width, height)
   result = RenderState(
@@ -49,47 +39,6 @@ proc newRenderState*(width, height: int, scale: float32 = 1.0): RenderState =
     scale: scale,
     rootFontSize: 16.0
   )
-
-proc getFont*(fc: FontCache, family: string, size: float32,
-               weight: FontWeightKind, style: FontStyleKind): Font =
-  let key = family & ":" & $size & ":" & $weight & ":" & $style
-  if key in fc.fonts: return fc.fonts[key]
-  var tf: Typeface
-  if family in fc.typefaces:
-    tf = fc.typefaces[family]
-  elif fc.defaultTypeface != nil:
-    tf = fc.defaultTypeface
-  else:
-    try:
-      let paths = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/System/Library/Fonts/Helvetica.ttc",
-        "/System/Library/Fonts/Arial.ttf",
-        "C:/Windows/Fonts/arial.ttf",
-        "/usr/share/fonts/TTF/DejaVuSans.ttf",
-        "/usr/share/fonts/noto/NotoSans-Regular.ttf"
-      ]
-      var loaded = false
-      for path in paths:
-        try:
-          tf = readTypeface(path)
-          fc.defaultTypeface = tf
-          loaded = true
-          break
-        except: discard
-      if not loaded:
-        let f = Font()
-        fc.fonts[key] = f
-        return f
-    except:
-      let f = Font()
-      fc.fonts[key] = f
-      return f
-  var f = newFont(tf)
-  f.size = size
-  fc.fonts[key] = f
-  result = f
 
 proc toPColor*(c: dom.ColorRGBA): pixie.Color =
   pixie.color(c.r.float32 / 255, c.g.float32 / 255, c.b.float32 / 255, c.a.float32 / 255)
@@ -359,7 +308,7 @@ proc renderNode*(rs: RenderState, node: Node, offsetX, offsetY: float32)
 proc renderBackground*(rs: RenderState, node: Node, x, y, w, h: float32) =
   let style = node.computedStyle
   if style == nil: return
-  let fontSize = style.fontSize.value
+  let fontSize = node.layoutBox.fontSize
   let rtl = resolveLength(style.borderTopLeftRadius, w, fontSize, rs.rootFontSize, rs.viewportWidth, rs.viewportHeight)
   let rtr = resolveLength(style.borderTopRightRadius, w, fontSize, rs.rootFontSize, rs.viewportWidth, rs.viewportHeight)
   let rbr = resolveLength(style.borderBottomRightRadius, w, fontSize, rs.rootFontSize, rs.viewportWidth, rs.viewportHeight)
@@ -433,8 +382,7 @@ proc renderBackground*(rs: RenderState, node: Node, x, y, w, h: float32) =
 
   drawBoxShadows(rs.ctx, x, y, w, h, style.boxShadow, rtl, rtr, rbr, rbl, true)
 
-proc measureText*(rs: RenderState, text: string, style: ComputedStyle): tuple[w, h: float32] =
-  let fontSize = style.fontSize.value
+proc measureText*(rs: RenderState, text: string, style: ComputedStyle, fontSize: float32): tuple[w, h: float32] =
   let font = rs.fontCache.getFont(style.fontFamily, fontSize * rs.scale,
                                    style.fontWeight, style.fontStyle)
   if font.typeface == nil:
@@ -445,10 +393,10 @@ proc measureText*(rs: RenderState, text: string, style: ComputedStyle): tuple[w,
   result.w = bounds.x
   result.h = bounds.y
 
-proc renderText*(rs: RenderState, text: string, x, y, maxWidth: float32,
+proc renderText*(rs: RenderState, text: string, x, y: float32,
                   style: ComputedStyle) =
-  if text.strip().len == 0: return
-  let fontSize = style.fontSize.value
+  if text.len == 0: return
+  let fontSize = if style != nil: style.fontSize.value else: 16.0f32 # Fallback
   let font = rs.fontCache.getFont(style.fontFamily, fontSize * rs.scale,
                                    style.fontWeight, style.fontStyle)
   if font.typeface == nil:
@@ -472,7 +420,7 @@ proc renderText*(rs: RenderState, text: string, x, y, maxWidth: float32,
     for shadow in style.textShadow:
       let sc = shadow.color.toPColor()
       if shadow.blur > 0:
-        let tw = int(measureText(rs, displayText, style).w) + int(abs(shadow.x)) * 2 + int(shadow.blur) * 4 + 4
+        let tw = int(measureText(rs, displayText, style, fontSize).w) + int(abs(shadow.x)) * 2 + int(shadow.blur) * 4 + 4
         let th = int(fontSize * 1.5) + int(abs(shadow.y)) * 2 + int(shadow.blur) * 4 + 4
         let shadowImg = newImage(max(tw, 1), max(th, 1))
         shadowImg.fillText(font, displayText, translate(vec2(
@@ -483,59 +431,16 @@ proc renderText*(rs: RenderState, text: string, x, y, maxWidth: float32,
           x + shadow.x - abs(shadow.x) - shadow.blur * 2,
           y + shadow.y - abs(shadow.y) - shadow.blur * 2)
       else:
+        rs.ctx.save()
+        rs.ctx.fillStyle = sc
         rs.ctx.image.fillText(font, displayText, translate(vec2(x + shadow.x, y + shadow.y)))
+        rs.ctx.restore()
 
-  rs.ctx.fillStyle = color
-
-  let lineHeight = resolveLength(style.lineHeight,
-    fontSize, fontSize, rs.rootFontSize, rs.viewportWidth, rs.viewportHeight)
-  let effectiveLH = if style.lineHeight.kind == cvAuto: fontSize * 1.2 else: lineHeight
-
-  if maxWidth > 0 and style.whiteSpace notin {wsPre, wsNowrap}:
-    let words = displayText.split(' ')
-    var line = ""
-    var curY = y
-    for word in words:
-      let testLine = if line.len == 0: word else: line & " " & word
-      let bounds = font.layoutBounds(testLine)
-      if bounds.x > maxWidth and line.len > 0:
-        case style.textAlign
-        of taRight:
-          let lb = font.layoutBounds(line)
-          rs.ctx.image.fillText(font, line, translate(vec2(x + maxWidth - lb.x, curY)))
-        of taCenter:
-          let lb = font.layoutBounds(line)
-          rs.ctx.image.fillText(font, line, translate(vec2(x + (maxWidth - lb.x) / 2, curY)))
-        else:
-          rs.ctx.image.fillText(font, line, translate(vec2(x, curY)))
-        line = word
-        curY += effectiveLH
-      else:
-        line = testLine
-    if line.len > 0:
-      case style.textAlign
-      of taRight:
-        let lb = font.layoutBounds(line)
-        rs.ctx.image.fillText(font, line, translate(vec2(x + maxWidth - lb.x, curY)))
-      of taCenter:
-        let lb = font.layoutBounds(line)
-        rs.ctx.image.fillText(font, line, translate(vec2(x + (maxWidth - lb.x) / 2, curY)))
-      else:
-        rs.ctx.image.fillText(font, line, translate(vec2(x, curY)))
-  else:
-    case style.textAlign
-    of taRight:
-      let lb = font.layoutBounds(displayText)
-      rs.ctx.image.fillText(font, displayText, translate(vec2(x + maxWidth - lb.x, y)))
-    of taCenter:
-      let lb = font.layoutBounds(displayText)
-      rs.ctx.image.fillText(font, displayText, translate(vec2(x + (maxWidth - lb.x) / 2, y)))
-    else:
-      rs.ctx.image.fillText(font, displayText, translate(vec2(x, y)))
+  rs.ctx.image.fillText(font, displayText, translate(vec2(x, y)))
 
   if style.textDecoration != tdNone:
     let bounds = font.layoutBounds(displayText)
-    let tw = min(bounds.x, if maxWidth > 0: maxWidth else: bounds.x)
+    let tw = bounds.x
     let lineY = case style.textDecoration
       of tdUnderline: y + fontSize * 0.15
       of tdOverline: y - fontSize * 0.9
@@ -552,17 +457,6 @@ proc renderNode*(rs: RenderState, node: Node, offsetX, offsetY: float32) =
   if node.kind == nkDocument:
     for child in node.children:
       renderNode(rs, child, offsetX, offsetY)
-    return
-  if node.kind == nkText:
-    if node.parent != nil and node.parent.computedStyle != nil:
-      let style = node.parent.computedStyle
-      if style.visibility == viHidden: return
-      let box = node.parent.layoutBox
-      if box == nil: return
-      let x = offsetX + box.x + box.contentX
-      let y = offsetY + box.y + box.contentY + style.fontSize.value
-      let maxW = box.contentWidth
-      renderText(rs, node.textContent, x, y, maxW, style)
     return
   if node.kind != nkElement: return
   let style = node.computedStyle
@@ -601,11 +495,11 @@ proc renderNode*(rs: RenderState, node: Node, offsetX, offsetY: float32) =
   let needsClip = style.overflowX == ovHidden or style.overflowY == ovHidden or
                    style.overflowX == ovClip or style.overflowY == ovClip
   if needsClip:
-    let fontSize = style.fontSize.value
-    let rtl = resolveLength(style.borderTopLeftRadius, box.borderWidth, fontSize, rs.rootFontSize, rs.viewportWidth, rs.viewportHeight)
-    let rtr = resolveLength(style.borderTopRightRadius, box.borderWidth, fontSize, rs.rootFontSize, rs.viewportWidth, rs.viewportHeight)
-    let rbr = resolveLength(style.borderBottomRightRadius, box.borderWidth, fontSize, rs.rootFontSize, rs.viewportWidth, rs.viewportHeight)
-    let rbl = resolveLength(style.borderBottomLeftRadius, box.borderWidth, fontSize, rs.rootFontSize, rs.viewportWidth, rs.viewportHeight)
+    let fontSizeResolved = box.fontSize
+    let rtl = resolveLength(style.borderTopLeftRadius, box.borderWidth, fontSizeResolved, rs.rootFontSize, rs.viewportWidth, rs.viewportHeight)
+    let rtr = resolveLength(style.borderTopRightRadius, box.borderWidth, fontSizeResolved, rs.rootFontSize, rs.viewportWidth, rs.viewportHeight)
+    let rbr = resolveLength(style.borderBottomRightRadius, box.borderWidth, fontSizeResolved, rs.rootFontSize, rs.viewportWidth, rs.viewportHeight)
+    let rbl = resolveLength(style.borderBottomLeftRadius, box.borderWidth, fontSizeResolved, rs.rootFontSize, rs.viewportWidth, rs.viewportHeight)
     let clipPath = roundedRectPath(bx + box.contentX - box.paddingLeft,
                                     by + box.contentY - box.paddingTop,
                                     box.clientWidth, box.clientHeight,
@@ -620,27 +514,30 @@ proc renderNode*(rs: RenderState, node: Node, offsetX, offsetY: float32) =
     cmp(za, zb)
   )
 
-  for child in childrenToRender:
-    if child.computedStyle != nil and child.computedStyle.position in {pkAbsolute, pkFixed}:
-      continue
-    if child.kind == nkText:
-      renderNode(rs, child, if needsLayer: -ax else: offsetX,
-                             if needsLayer: -ay else: offsetY)
-    else:
-      renderNode(rs, child, if needsLayer: -ax + bx else: offsetX,
-                             if needsLayer: -ay + by else: offsetY)
+  if box.lineBoxes.len > 0:
+    for line in box.lineBoxes:
+      for frag in line.fragments:
+        if frag.text != "":
+          let fstyle = if frag.node.parent != nil: frag.node.parent.computedStyle else: style
+          renderText(rs, frag.text, bx + frag.x, by + frag.y + line.baseline, fstyle)
+        elif frag.node != nil and frag.node.kind == nkElement:
+          renderNode(rs, frag.node, bx, by)
+  else:
+    for child in childrenToRender:
+      if child.computedStyle != nil and child.computedStyle.position in {pkAbsolute, pkFixed}:
+        continue
+      renderNode(rs, child, bx, by)
 
   for child in childrenToRender:
     if child.computedStyle != nil and child.computedStyle.position in {pkAbsolute, pkFixed}:
-      renderNode(rs, child, if needsLayer: -ax + bx else: offsetX,
-                              if needsLayer: -ay + by else: offsetY)
+      renderNode(rs, child, bx, by)
 
   if needsClip:
     rs.ctx.restore()
 
-  let fontSize = style.fontSize.value
+  let fontSizeResolved = box.fontSize
   drawBorder(rs.ctx, bx, by, box.borderWidth, box.borderHeight, style,
-             fontSize, rs.rootFontSize, rs.viewportWidth, rs.viewportHeight)
+             fontSizeResolved, rs.rootFontSize, rs.viewportWidth, rs.viewportHeight)
 
   if node.focused and rs.focusedNode == node:
     let outlineW = if style.outline.kind != cvAuto: style.outline.value else: 2.0f32

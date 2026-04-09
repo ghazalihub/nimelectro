@@ -118,6 +118,7 @@ proc registerNativeProc*(eng: NimaxEngine, name: string, cb: NativeCallback) =
 
 proc openWindow*(eng: NimaxEngine, config: WindowConfig = defaultConfig()) =
   let win = newNimaxWindow(config, eng.document)
+  win.styleResolver = eng.styleResolver
   win.renderState = eng.renderState
   win.layoutCtx = eng.layoutCtx
   win.animEngine = eng.animEngine
@@ -141,6 +142,7 @@ proc renderOffscreen*(eng: NimaxEngine, frames = 1) =
   if eng.window == nil:
     let win = newNimaxWindow(defaultConfig(
       int(eng.viewportWidth), int(eng.viewportHeight)), eng.document)
+    win.styleResolver = eng.styleResolver
     win.renderState = eng.renderState
     win.layoutCtx = eng.layoutCtx
     win.animEngine = eng.animEngine

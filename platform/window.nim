@@ -40,6 +40,7 @@ type
   NimaxWindow* = ref object
     config*: WindowConfig
     dom*: Node
+    styleResolver*: StyleResolver
     renderState*: RenderState
     layoutCtx*: LayoutContext
     animEngine*: AnimationEngine
@@ -100,7 +101,7 @@ proc invalidate*(win: NimaxWindow) =
 
 proc layout*(win: NimaxWindow) =
   if not win.needsLayout: return
-  let resolver = newStyleResolver()
+  let resolver = if win.styleResolver != nil: win.styleResolver else: newStyleResolver()
   resolver.viewportWidth = win.width.float32
   resolver.viewportHeight = win.height.float32
   resolver.resolveStyles(win.dom)
