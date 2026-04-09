@@ -1,5 +1,6 @@
 import std/[strutils, tables, sequtils]
 import ../core/dom
+from ../css/resolver import parseInlineStyle
 
 type
   HtmlParser* = ref object
@@ -176,7 +177,6 @@ proc parseNode(p: HtmlParser, parent: Node) =
     for name, val in attrs:
       el.setAttribute(name, val)
     if "style" in attrs:
-      from ../css/resolver import parseInlineStyle
       let parsed = parseInlineStyle(attrs["style"])
       for k, v in parsed:
         el.inlineStyle[k] = v

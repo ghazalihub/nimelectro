@@ -117,12 +117,11 @@ proc interpolateColor*(a, b: string, t: float32): string =
       let inner = v[v.find('(')+1..^2]
       let parts = inner.split(',')
       if parts.len >= 3:
-        return (
-          try: parseFloat(parts[0].strip()).float32 except: 0,
-          try: parseFloat(parts[1].strip()).float32 except: 0,
-          try: parseFloat(parts[2].strip()).float32 except: 0,
-          if parts.len >= 4: try: parseFloat(parts[3].strip()).float32 * 255 except: 255 else: 255
-        )
+        let r = (try: parseFloat(parts[0].strip()).float32 except: 0.0f32)
+        let g = (try: parseFloat(parts[1].strip()).float32 except: 0.0f32)
+        let b = (try: parseFloat(parts[2].strip()).float32 except: 0.0f32)
+        let a = (if parts.len >= 4: (try: parseFloat(parts[3].strip()).float32 * 255 except: 255.0f32) else: 255.0f32)
+        return (r, g, b, a)
     elif v.startsWith("#"):
       let c = parseColor(v)
       return (c.r.float32, c.g.float32, c.b.float32, c.a.float32)
@@ -242,16 +241,16 @@ proc tick*(eng: AnimationEngine): bool =
     if not anim.active or anim.node == nil: continue
     if now < anim.startTime.float64: anyActive = true; continue
     let elapsed = float32(now - anim.startTime)
-    let totalDuration = anim.duration * (if anim.iterationCount <= 0: 1 else: anim.iterationCount)
+    let totalDuration = anim.duration * (if anim.iterationCount <= 0: 1.0f32 else: anim.iterationCount)
     let rawProgress = if totalDuration <= 0: 1.0f32
                        else: clamp(elapsed / totalDuration, 0, 1)
     let iterProgress = if anim.duration <= 0: 1.0f32
                         else: (elapsed mod anim.duration) / anim.duration
-    let dirProgress = case anim.direction
+    let dirProgress = (case anim.direction
       of adReverse: 1.0f32 - iterProgress
-      of adAlternate: if int(elapsed / anim.duration) mod 2 == 0: iterProgress else: 1 - iterProgress
-      of adAlternateReverse: if int(elapsed / anim.duration) mod 2 == 0: 1 - iterProgress else: iterProgress
-      else: iterProgress
+      of adAlternate: (if int(elapsed / anim.duration) mod 2 == 0: iterProgress else: 1.0f32 - iterProgress)
+      of adAlternateReverse: (if int(elapsed / anim.duration) mod 2 == 0: 1.0f32 - iterProgress else: iterProgress)
+      else: iterProgress)
     let t = anim.easing(dirProgress)
 
     var loIdx = 0

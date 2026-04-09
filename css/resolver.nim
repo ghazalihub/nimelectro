@@ -1,4 +1,4 @@
-import std/[tables, strutils, strscans, sequtils, parseutils, math, options, re]
+import std/[tables, strutils, strscans, sequtils, parseutils, math, options, algorithm]
 import ../core/dom
 
 type
@@ -84,7 +84,7 @@ proc parseSelector*(s: string): seq[Selector] =
   var selectorGroups = s.split(',')
   for group in selectorGroups:
     var selector: Selector
-    var parts = group.strip().split(re"\s+")
+    var parts = group.strip().splitWhitespace()
     var i = 0
     while i < parts.len:
       var part = parts[i]
@@ -472,6 +472,7 @@ proc parseColor*(s: string): ColorRGBA =
       let b = parseHexInt(h[4..5]).uint8
       let a = parseHexInt(h[6..7]).uint8
       return rgba(r, g, b, a)
+    else: discard
   if v.startsWith("rgb(") or v.startsWith("rgba("):
     let inner = v[v.find('(') + 1..^2]
     let parts = inner.split(',')
@@ -581,61 +582,54 @@ proc applyDeclaration*(style: ComputedStyle, prop: string, value: string,
   let v = value.strip()
   case prop
   of "display":
-    style.display = case v
-      of "none": dkNone
-      of "block": dkBlock
-      of "inline": dkInline
-      of "inline-block": dkInlineBlock
-      of "flex": dkFlex
-      of "inline-flex": dkInlineFlex
-      of "grid": dkGrid
-      of "inline-grid": dkInlineGrid
-      of "table": dkTable
-      of "table-row": dkTableRow
-      of "table-cell": dkTableCell
-      of "table-header-group": dkTableHeader
-      of "table-footer-group": dkTableFooter
-      of "list-item": dkListItem
-      of "contents": dkContents
-      else: dkBlock
+    if v == "none": style.display = dkNone
+    elif v == "block": style.display = dkBlock
+    elif v == "inline": style.display = dkInline
+    elif v == "inline-block": style.display = dkInlineBlock
+    elif v == "flex": style.display = dkFlex
+    elif v == "inline-flex": style.display = dkInlineFlex
+    elif v == "grid": style.display = dkGrid
+    elif v == "inline-grid": style.display = dkInlineGrid
+    elif v == "table": style.display = dkTable
+    elif v == "table-row": style.display = dkTableRow
+    elif v == "table-cell": style.display = dkTableCell
+    elif v == "table-header-group": style.display = dkTableHeader
+    elif v == "table-footer-group": style.display = dkTableFooter
+    elif v == "list-item": style.display = dkListItem
+    elif v == "contents": style.display = dkContents
+    else: style.display = dkBlock
   of "position":
-    style.position = case v
-      of "static": pkStatic
-      of "relative": pkRelative
-      of "absolute": pkAbsolute
-      of "fixed": pkFixed
-      of "sticky": pkSticky
-      else: pkStatic
+    if v == "static": style.position = pkStatic
+    elif v == "relative": style.position = pkRelative
+    elif v == "absolute": style.position = pkAbsolute
+    elif v == "fixed": style.position = pkFixed
+    elif v == "sticky": style.position = pkSticky
+    else: style.position = pkStatic
   of "float":
-    style.float = case v
-      of "left": fkLeft
-      of "right": fkRight
-      else: fkNone
+    if v == "left": style.float = fkLeft
+    elif v == "right": style.float = fkRight
+    else: style.float = fkNone
   of "overflow":
-    style.overflowX = case v
-      of "hidden": ovHidden
-      of "scroll": ovScroll
-      of "auto": ovAuto
-      of "clip": ovClip
-      else: ovVisible
+    if v == "hidden": style.overflowX = ovHidden
+    elif v == "scroll": style.overflowX = ovScroll
+    elif v == "auto": style.overflowX = ovAuto
+    elif v == "clip": style.overflowX = ovClip
+    else: style.overflowX = ovVisible
     style.overflowY = style.overflowX
   of "overflow-x":
-    style.overflowX = case v
-      of "hidden": ovHidden
-      of "scroll": ovScroll
-      of "auto": ovAuto
-      else: ovVisible
+    if v == "hidden": style.overflowX = ovHidden
+    elif v == "scroll": style.overflowX = ovScroll
+    elif v == "auto": style.overflowX = ovAuto
+    else: style.overflowX = ovVisible
   of "overflow-y":
-    style.overflowY = case v
-      of "hidden": ovHidden
-      of "scroll": ovScroll
-      of "auto": ovAuto
-      else: ovVisible
+    if v == "hidden": style.overflowY = ovHidden
+    elif v == "scroll": style.overflowY = ovScroll
+    elif v == "auto": style.overflowY = ovAuto
+    else: style.overflowY = ovVisible
   of "visibility":
-    style.visibility = case v
-      of "hidden": viHidden
-      of "collapse": viCollapse
-      else: viVisible
+    if v == "hidden": style.visibility = viHidden
+    elif v == "collapse": style.visibility = viCollapse
+    else: style.visibility = viVisible
   of "opacity":
     try: style.opacity = parseFloat(v).float32
     except: discard
@@ -721,27 +715,38 @@ proc applyDeclaration*(style: ComputedStyle, prop: string, value: string,
   of "border-bottom-color": style.borderBottomColor = parseColor(v)
   of "border-left-color": style.borderLeftColor = parseColor(v)
   of "border-style":
-    let bs = case v
-      of "solid": bsSolid
-      of "dashed": bsDashed
-      of "dotted": bsDotted
-      of "double": bsDouble
-      of "groove": bsGroove
-      of "ridge": bsRidge
-      of "inset": bsInset
-      of "outset": bsOutset
-      of "hidden": bsHidden
-      else: bsNone
+    var bs = bsNone
+    if v == "solid": bs = bsSolid
+    elif v == "dashed": bs = bsDashed
+    elif v == "dotted": bs = bsDotted
+    elif v == "double": bs = bsDouble
+    elif v == "groove": bs = bsGroove
+    elif v == "ridge": bs = bsRidge
+    elif v == "inset": bs = bsInset
+    elif v == "outset": bs = bsOutset
+    elif v == "hidden": bs = bsHidden
     style.borderTopStyle = bs; style.borderRightStyle = bs
     style.borderBottomStyle = bs; style.borderLeftStyle = bs
-  of "border-top-style": style.borderTopStyle = case v
-    of "solid": bsSolid; of "dashed": bsDashed; of "dotted": bsDotted; else: bsNone
-  of "border-right-style": style.borderRightStyle = case v
-    of "solid": bsSolid; of "dashed": bsDashed; of "dotted": bsDotted; else: bsNone
-  of "border-bottom-style": style.borderBottomStyle = case v
-    of "solid": bsSolid; of "dashed": bsDashed; of "dotted": bsDotted; else: bsNone
-  of "border-left-style": style.borderLeftStyle = case v
-    of "solid": bsSolid; of "dashed": bsDashed; of "dotted": bsDotted; else: bsNone
+  of "border-top-style":
+    if v == "solid": style.borderTopStyle = bsSolid
+    elif v == "dashed": style.borderTopStyle = bsDashed
+    elif v == "dotted": style.borderTopStyle = bsDotted
+    else: style.borderTopStyle = bsNone
+  of "border-right-style":
+    if v == "solid": style.borderRightStyle = bsSolid
+    elif v == "dashed": style.borderRightStyle = bsDashed
+    elif v == "dotted": style.borderRightStyle = bsDotted
+    else: style.borderRightStyle = bsNone
+  of "border-bottom-style":
+    if v == "solid": style.borderBottomStyle = bsSolid
+    elif v == "dashed": style.borderBottomStyle = bsDashed
+    elif v == "dotted": style.borderBottomStyle = bsDotted
+    else: style.borderBottomStyle = bsNone
+  of "border-left-style":
+    if v == "solid": style.borderLeftStyle = bsSolid
+    elif v == "dashed": style.borderLeftStyle = bsDashed
+    elif v == "dotted": style.borderLeftStyle = bsDotted
+    else: style.borderLeftStyle = bsNone
   of "border":
     let parts = v.splitWhitespace()
     for part in parts:
@@ -751,9 +756,11 @@ proc applyDeclaration*(style: ComputedStyle, prop: string, value: string,
         style.borderTopWidth = bw; style.borderRightWidth = bw
         style.borderBottomWidth = bw; style.borderLeftWidth = bw
       elif lp in ["solid","dashed","dotted","double","groove","ridge","inset","outset","none","hidden"]:
-        let bs = case lp
-          of "solid": bsSolid; of "dashed": bsDashed; of "dotted": bsDotted
-          of "double": bsDouble; else: bsNone
+        var bs = bsNone
+        if lp == "solid": bs = bsSolid
+        elif lp == "dashed": bs = bsDashed
+        elif lp == "dotted": bs = bsDotted
+        elif lp == "double": bs = bsDouble
         style.borderTopStyle = bs; style.borderRightStyle = bs
         style.borderBottomStyle = bs; style.borderLeftStyle = bs
       elif lp != "none" and lp.len > 0:
@@ -791,6 +798,17 @@ proc applyDeclaration*(style: ComputedStyle, prop: string, value: string,
   of "border-bottom-right-radius": style.borderBottomRightRadius = parseCssValue(v)
   of "background-color": style.backgroundColor = parseColor(v)
   of "background-image": style.backgroundImage = v
+  of "background-repeat":
+    if v == "no-repeat": style.backgroundRepeat = brNoRepeat
+    elif v == "repeat-x": style.backgroundRepeat = brRepeatX
+    elif v == "repeat-y": style.backgroundRepeat = brRepeatY
+    elif v == "round": style.backgroundRepeat = brRound
+    elif v == "space": style.backgroundRepeat = brSpace
+    else: style.backgroundRepeat = brRepeat
+  of "background-size":
+    if v == "cover": style.backgroundSize = bszCover
+    elif v == "contain": style.backgroundSize = bszContain
+    else: style.backgroundSize = bszCustom # Simplified
   of "background":
     if v == "none" or v == "transparent":
       style.backgroundColor = transparent()
@@ -832,17 +850,20 @@ proc applyDeclaration*(style: ComputedStyle, prop: string, value: string,
       style.fontSize = parseCssValue(v, if parentStyle != nil: parentStyle.fontSize.value else: 16.0)
   of "font-family": style.fontFamily = v.strip(chars = {'"', '\''})
   of "font-weight":
-    style.fontWeight = case v
-      of "100": fw100; of "200": fw200; of "300": fw300
-      of "400", "normal": fw400; of "500": fw500
-      of "600": fw600; of "700", "bold": fw700
-      of "800": fw800; of "900": fw900
-      else: fw400
+    if v == "100": style.fontWeight = fw100
+    elif v == "200": style.fontWeight = fw200
+    elif v == "300": style.fontWeight = fw300
+    elif v == "400" or v == "normal": style.fontWeight = fw400
+    elif v == "500": style.fontWeight = fw500
+    elif v == "600": style.fontWeight = fw600
+    elif v == "700" or v == "bold": style.fontWeight = fw700
+    elif v == "800": style.fontWeight = fw800
+    elif v == "900": style.fontWeight = fw900
+    else: style.fontWeight = fw400
   of "font-style":
-    style.fontStyle = case v
-      of "italic": fsItalic
-      of "oblique": fsOblique
-      else: fsNormal
+    if v == "italic": style.fontStyle = fsItalic
+    elif v == "oblique": style.fontStyle = fsOblique
+    else: style.fontStyle = fsNormal
   of "font":
     let parts = v.splitWhitespace()
     var i = 0
@@ -852,11 +873,16 @@ proc applyDeclaration*(style: ComputedStyle, prop: string, value: string,
         style.fontStyle = if p == "italic": fsItalic else: fsOblique
       elif p in ["bold","100","200","300","400","500","600","700","800","900",
                  "lighter","bolder"]:
-        style.fontWeight = case p
-          of "bold","700": fw700; of "100": fw100; of "200": fw200
-          of "300","lighter": fw300; of "400","normal": fw400
-          of "500": fw500; of "600": fw600; of "800": fw800
-          of "900","bolder": fw900; else: fw400
+        if p == "bold" or p == "700": style.fontWeight = fw700
+        elif p == "100": style.fontWeight = fw100
+        elif p == "200": style.fontWeight = fw200
+        elif p == "300" or p == "lighter": style.fontWeight = fw300
+        elif p == "400" or p == "normal": style.fontWeight = fw400
+        elif p == "500": style.fontWeight = fw500
+        elif p == "600": style.fontWeight = fw600
+        elif p == "800": style.fontWeight = fw800
+        elif p == "900" or p == "bolder": style.fontWeight = fw900
+        else: style.fontWeight = fw400
       elif "/" in p:
         let fparts = p.split('/')
         if fparts.len >= 1: style.fontSize = parseCssValue(fparts[0])
@@ -872,95 +898,87 @@ proc applyDeclaration*(style: ComputedStyle, prop: string, value: string,
     else: style.lineHeight = parseCssValue(v)
   of "letter-spacing": style.letterSpacing = parseCssValue(v)
   of "text-align":
-    style.textAlign = case v
-      of "right": taRight
-      of "center": taCenter
-      of "justify": taJustify
-      of "start": taStart
-      of "end": taEnd
-      else: taLeft
+    if v == "right": style.textAlign = taRight
+    elif v == "center": style.textAlign = taCenter
+    elif v == "justify": style.textAlign = taJustify
+    elif v == "start": style.textAlign = taStart
+    elif v == "end": style.textAlign = taEnd
+    else: style.textAlign = taLeft
   of "text-decoration":
-    style.textDecoration = case v
-      of "underline": tdUnderline
-      of "overline": tdOverline
-      of "line-through": tdLineThrough
-      else: tdNone
+    if v == "underline": style.textDecoration = tdUnderline
+    elif v == "overline": style.textDecoration = tdOverline
+    elif v == "line-through": style.textDecoration = tdLineThrough
+    else: style.textDecoration = tdNone
   of "text-transform":
-    style.textTransform = case v
-      of "uppercase": ttUppercase
-      of "lowercase": ttLowercase
-      of "capitalize": ttCapitalize
-      else: ttNone
+    if v == "uppercase": style.textTransform = ttUppercase
+    elif v == "lowercase": style.textTransform = ttLowercase
+    elif v == "capitalize": style.textTransform = ttCapitalize
+    else: style.textTransform = ttNone
   of "text-overflow":
     style.textOverflow = if v == "ellipsis": toEllipsis else: toClip
   of "white-space":
-    style.whiteSpace = case v
-      of "pre": wsPre
-      of "nowrap": wsNowrap
-      of "pre-wrap": wsPreWrap
-      of "pre-line": wsPreLine
-      of "break-spaces": wsBreakSpaces
-      else: wsNormal
+    if v == "pre": style.whiteSpace = wsPre
+    elif v == "nowrap": style.whiteSpace = wsNowrap
+    elif v == "pre-wrap": style.whiteSpace = wsPreWrap
+    elif v == "pre-line": style.whiteSpace = wsPreLine
+    elif v == "break-spaces": style.whiteSpace = wsBreakSpaces
+    else: style.whiteSpace = wsNormal
   of "word-break":
-    style.wordBreak = case v
-      of "break-all": wbBreakAll
-      of "keep-all": wbKeepAll
-      of "break-word": wbBreakWord
-      else: wbNormal
+    if v == "break-all": style.wordBreak = wbBreakAll
+    elif v == "keep-all": style.wordBreak = wbKeepAll
+    elif v == "break-word": style.wordBreak = wbBreakWord
+    else: style.wordBreak = wbNormal
   of "vertical-align":
-    style.verticalAlign = case v
-      of "top": vaTop; of "middle": vaMiddle; of "bottom": vaBottom
-      of "text-top": vaTextTop; of "text-bottom": vaTextBottom
-      of "sub": vaSub; of "super": vaSuper
-      else: vaBaseline
+    if v == "top": style.verticalAlign = vaTop
+    elif v == "middle": style.verticalAlign = vaMiddle
+    elif v == "bottom": style.verticalAlign = vaBottom
+    elif v == "text-top": style.verticalAlign = vaTextTop
+    elif v == "text-bottom": style.verticalAlign = vaTextBottom
+    elif v == "sub": style.verticalAlign = vaSub
+    elif v == "super": style.verticalAlign = vaSuper
+    else: style.verticalAlign = vaBaseline
   of "flex-direction":
-    style.flexDirection = case v
-      of "row-reverse": fdRowReverse
-      of "column": fdColumn
-      of "column-reverse": fdColumnReverse
-      else: fdRow
+    if v == "row-reverse": style.flexDirection = fdRowReverse
+    elif v == "column": style.flexDirection = fdColumn
+    elif v == "column-reverse": style.flexDirection = fdColumnReverse
+    else: style.flexDirection = fdRow
   of "flex-wrap":
-    style.flexWrap = case v
-      of "wrap": fwWrap
-      of "wrap-reverse": fwWrapReverse
-      else: fwNowrap
+    if v == "wrap": style.flexWrap = fwWrap
+    elif v == "wrap-reverse": style.flexWrap = fwWrapReverse
+    else: style.flexWrap = fwNowrap
   of "flex-flow":
     let parts = v.splitWhitespace()
     for part in parts:
       applyDeclaration(style, "flex-direction", part)
       applyDeclaration(style, "flex-wrap", part)
   of "justify-content":
-    style.justifyContent = case v
-      of "flex-end", "end": jcFlexEnd
-      of "center": jcCenter
-      of "space-between": jcSpaceBetween
-      of "space-around": jcSpaceAround
-      of "space-evenly": jcSpaceEvenly
-      of "stretch": jcStretch
-      else: jcFlexStart
+    if v == "flex-end" or v == "end": style.justifyContent = jcFlexEnd
+    elif v == "center": style.justifyContent = jcCenter
+    elif v == "space-between": style.justifyContent = jcSpaceBetween
+    elif v == "space-around": style.justifyContent = jcSpaceAround
+    elif v == "space-evenly": style.justifyContent = jcSpaceEvenly
+    elif v == "stretch": style.justifyContent = jcStretch
+    else: style.justifyContent = jcFlexStart
   of "align-items":
-    style.alignItems = case v
-      of "flex-end", "end": aiFlexEnd
-      of "center": aiCenter
-      of "baseline": aiBaseline
-      of "flex-start", "start": aiFlexStart
-      else: aiStretch
+    if v == "flex-end" or v == "end": style.alignItems = aiFlexEnd
+    elif v == "center": style.alignItems = aiCenter
+    elif v == "baseline": style.alignItems = aiBaseline
+    elif v == "flex-start" or v == "start": style.alignItems = aiFlexStart
+    else: style.alignItems = aiStretch
   of "align-content":
-    style.alignContent = case v
-      of "flex-end": acFlexEnd
-      of "center": acCenter
-      of "space-between": acSpaceBetween
-      of "space-around": acSpaceAround
-      of "stretch": acStretch
-      else: acFlexStart
+    if v == "flex-end": style.alignContent = acFlexEnd
+    elif v == "center": style.alignContent = acCenter
+    elif v == "space-between": style.alignContent = acSpaceBetween
+    elif v == "space-around": style.alignContent = acSpaceAround
+    elif v == "stretch": style.alignContent = acStretch
+    else: style.alignContent = acFlexStart
   of "align-self":
-    style.alignSelf = case v
-      of "flex-start", "start": asFlexStart
-      of "flex-end", "end": asFlexEnd
-      of "center": asCenter
-      of "baseline": asBaseline
-      of "stretch": asStretch
-      else: asAuto
+    if v == "flex-start" or v == "start": style.alignSelf = asFlexStart
+    elif v == "flex-end" or v == "end": style.alignSelf = asFlexEnd
+    elif v == "center": style.alignSelf = asCenter
+    elif v == "baseline": style.alignSelf = asBaseline
+    elif v == "stretch": style.alignSelf = asStretch
+    else: style.alignSelf = asAuto
   of "flex-grow":
     try: style.flexGrow = parseFloat(v).float32
     except: discard
@@ -998,37 +1016,34 @@ proc applyDeclaration*(style: ComputedStyle, prop: string, value: string,
   of "grid-column": style.gridColumn = v
   of "grid-row": style.gridRow = v
   of "cursor":
-    style.cursor = case v
-      of "pointer": cuPointer
-      of "crosshair": cuCrosshair
-      of "text": cuText
-      of "move": cuMove
-      of "not-allowed": cuNotAllowed
-      of "wait": cuWait
-      of "help": cuHelp
-      of "n-resize": cuNResize
-      of "e-resize": cuEResize
-      of "s-resize": cuSResize
-      of "w-resize": cuWResize
-      of "ew-resize": cuEWResize
-      of "ns-resize": cuNSResize
-      of "grab": cuGrab
-      of "grabbing": cuGrabbing
-      of "zoom-in": cuZoomIn
-      of "zoom-out": cuZoomOut
-      of "none": cuNone
-      else: cuDefault
+    if v == "pointer": style.cursor = cuPointer
+    elif v == "crosshair": style.cursor = cuCrosshair
+    elif v == "text": style.cursor = cuText
+    elif v == "move": style.cursor = cuMove
+    elif v == "not-allowed": style.cursor = cuNotAllowed
+    elif v == "wait": style.cursor = cuWait
+    elif v == "help": style.cursor = cuHelp
+    elif v == "n-resize": style.cursor = cuNResize
+    elif v == "e-resize": style.cursor = cuEResize
+    elif v == "s-resize": style.cursor = cuSResize
+    elif v == "w-resize": style.cursor = cuWResize
+    elif v == "ew-resize": style.cursor = cuEWResize
+    elif v == "ns-resize": style.cursor = cuNSResize
+    elif v == "grab": style.cursor = cuGrab
+    elif v == "grabbing": style.cursor = cuGrabbing
+    elif v == "zoom-in": style.cursor = cuZoomIn
+    elif v == "zoom-out": style.cursor = cuZoomOut
+    elif v == "none": style.cursor = cuNone
+    else: style.cursor = cuDefault
   of "pointer-events":
-    style.pointerEvents = case v
-      of "none": peNone
-      of "all": peAll
-      else: peAuto
+    if v == "none": style.pointerEvents = peNone
+    elif v == "all": style.pointerEvents = peAll
+    else: style.pointerEvents = peAuto
   of "user-select":
-    style.userSelect = case v
-      of "none": usNone
-      of "text": usText
-      of "all": usAll
-      else: usAuto
+    if v == "none": style.userSelect = usNone
+    elif v == "text": style.userSelect = usText
+    elif v == "all": style.userSelect = usAll
+    else: style.userSelect = usAuto
   of "box-shadow":
     if v == "none":
       style.boxShadow = @[]
@@ -1121,10 +1136,10 @@ proc applyDeclaration*(style: ComputedStyle, prop: string, value: string,
           except: 0
         of "skewx":
           tr.kind = trSkewX
-          tr.values[0] = try: parseFloat(args.replace("deg","")).float32 else: 0
+          tr.values[0] = try: parseFloat(args.replace("deg","")).float32 except: 0
         of "skewy":
           tr.kind = trSkewY
-          tr.values[0] = try: parseFloat(args.replace("deg","")).float32 else: 0
+          tr.values[0] = try: parseFloat(args.replace("deg","")).float32 except: 0
         of "matrix":
           tr.kind = trMatrix
           let p2 = args.split(',')
@@ -1149,14 +1164,14 @@ proc applyDeclaration*(style: ComputedStyle, prop: string, value: string,
           else: parseFloat(parts[1]).float32
         except: 0
         if parts.len >= 3:
-          tr.timingFunction = case parts[2]
-            of "linear": ekLinear
-            of "ease-in": ekEaseIn
-            of "ease-out": ekEaseOut
-            of "ease-in-out": ekEaseInOut
-            of "step-start": ekStepStart
-            of "step-end": ekStepEnd
-            else: ekEase
+          let tf = parts[2]
+          if tf == "linear": tr.timingFunction = ekLinear
+          elif tf == "ease-in": tr.timingFunction = ekEaseIn
+          elif tf == "ease-out": tr.timingFunction = ekEaseOut
+          elif tf == "ease-in-out": tr.timingFunction = ekEaseInOut
+          elif tf == "step-start": tr.timingFunction = ekStepStart
+          elif tf == "step-end": tr.timingFunction = ekStepEnd
+          else: tr.timingFunction = ekEase
         if parts.len >= 4:
           tr.delay = try:
             if parts[3].endsWith("ms"): parseFloat(parts[3][0..^3]).float32 / 1000.0
@@ -1165,18 +1180,31 @@ proc applyDeclaration*(style: ComputedStyle, prop: string, value: string,
           except: 0
         style.transition.add(tr)
   of "mix-blend-mode":
-    style.mixBlendMode = case v
-      of "multiply": bmMultiply; of "screen": bmScreen; of "overlay": bmOverlay
-      of "darken": bmDarken; of "lighten": bmLighten; of "color-dodge": bmColorDodge
-      of "color-burn": bmColorBurn; of "hard-light": bmHardLight
-      of "soft-light": bmSoftLight; of "difference": bmDifference
-      of "exclusion": bmExclusion; of "hue": bmHue; of "saturation": bmSaturation
-      of "color": bmColor; of "luminosity": bmLuminosity
-      else: bmNormal
+    if v == "multiply": style.mixBlendMode = bmMultiply
+    elif v == "screen": style.mixBlendMode = bmScreen
+    elif v == "overlay": style.mixBlendMode = bmOverlay
+    elif v == "darken": style.mixBlendMode = bmDarken
+    elif v == "lighten": style.mixBlendMode = bmLighten
+    elif v == "color-dodge": style.mixBlendMode = bmColorDodge
+    elif v == "color-burn": style.mixBlendMode = bmColorBurn
+    elif v == "hard-light": style.mixBlendMode = bmHardLight
+    elif v == "soft-light": style.mixBlendMode = bmSoftLight
+    elif v == "difference": style.mixBlendMode = bmDifference
+    elif v == "exclusion": style.mixBlendMode = bmExclusion
+    elif v == "hue": style.mixBlendMode = bmHue
+    elif v == "saturation": style.mixBlendMode = bmSaturation
+    elif v == "color": style.mixBlendMode = bmColor
+    elif v == "luminosity": style.mixBlendMode = bmLuminosity
+    else: style.mixBlendMode = bmNormal
   of "object-fit":
-    style.objectFit = case v
-      of "contain": ofContain; of "cover": ofCover; of "none": ofNone
-      of "scale-down": ofScaleDown; else: ofFill
+    if v == "contain": style.objectFit = ofContain
+    elif v == "cover": style.objectFit = ofCover
+    elif v == "none": style.objectFit = ofNone
+    elif v == "scale-down": style.objectFit = ofScaleDown
+    else: style.objectFit = ofFill
+  of "box-sizing":
+    if v == "border-box": style.boxSizing = bszBorderBox
+    else: style.boxSizing = bszContentBox
   of "aspect-ratio":
     if v == "auto":
       style.aspectRatio = none(tuple[w, h: float32])
@@ -1196,20 +1224,25 @@ proc applyDeclaration*(style: ComputedStyle, prop: string, value: string,
   of "content":
     style.content = v.strip(chars = {'"', '\''})
   of "list-style-type":
-    style.listStyleType = case v
-      of "none": lsNone; of "disc": lsDisc; of "circle": lsCircle
-      of "square": lsSquare; of "decimal": lsDecimal
-      of "lower-alpha": lsAlpha; of "upper-alpha": lsUpperAlpha
-      of "lower-roman": lsRoman; of "upper-roman": lsUpperRoman
-      else: lsDisc
+    if v == "none": style.listStyleType = lsNone
+    elif v == "disc": style.listStyleType = lsDisc
+    elif v == "circle": style.listStyleType = lsCircle
+    elif v == "square": style.listStyleType = lsSquare
+    elif v == "decimal": style.listStyleType = lsDecimal
+    elif v == "lower-alpha": style.listStyleType = lsAlpha
+    elif v == "upper-alpha": style.listStyleType = lsUpperAlpha
+    elif v == "lower-roman": style.listStyleType = lsRoman
+    elif v == "upper-roman": style.listStyleType = lsUpperRoman
+    else: style.listStyleType = lsDisc
   of "table-layout":
     style.tableLayout = if v == "fixed": tlFixed else: tlAuto
   of "border-collapse":
     style.borderCollapse = if v == "collapse": bcCollapse else: bcSeparate
   of "resize":
-    style.resize = case v
-      of "both": rkBoth; of "horizontal": rkHorizontal
-      of "vertical": rkVertical; else: rkNone
+    if v == "both": style.resize = rkBoth
+    elif v == "horizontal": style.resize = rkHorizontal
+    elif v == "vertical": style.resize = rkVertical
+    else: style.resize = rkNone
   of "scroll-behavior":
     style.scrollBehavior = if v == "smooth": sbSmooth else: sbAuto
   of "caret-color": style.caretColor = parseColor(v)
@@ -1221,8 +1254,10 @@ proc applyDeclaration*(style: ComputedStyle, prop: string, value: string,
       if lp.endsWith("px") or lp == "0":
         style.outline = parseCssValue(lp)
       elif lp in ["solid","dashed","dotted","double","none"]:
-        style.outlineStyle = case lp
-          of "solid": bsSolid; of "dashed": bsDashed; of "dotted": bsDotted; else: bsNone
+        if lp == "solid": style.outlineStyle = bsSolid
+        elif lp == "dashed": style.outlineStyle = bsDashed
+        elif lp == "dotted": style.outlineStyle = bsDotted
+        else: style.outlineStyle = bsNone
       else:
         style.outlineColor = parseColor(lp)
   of "clip-path": style.clipPath = v
@@ -1350,7 +1385,7 @@ proc resolveStyles*(resolver: StyleResolver, root: Node) =
           if node.matchesSelector(selector):
             matchedRules.add((rule.specificity, rule.sourceOrder, rule.declarations))
             break
-    matchedRules.sort(proc(a, b: auto): int =
+    sort(matchedRules, proc(a, b: tuple[spec: tuple[a,b,c: int], order: int, decls: Table[string, string]]): int =
       if a.spec.a != b.spec.a: return cmp(a.spec.a, b.spec.a)
       if a.spec.b != b.spec.b: return cmp(a.spec.b, b.spec.b)
       if a.spec.c != b.spec.c: return cmp(a.spec.c, b.spec.c)

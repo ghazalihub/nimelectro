@@ -81,6 +81,8 @@ proc layoutBlock*(ctx: LayoutContext, node: Node, containingWidth: float32,
     contentWidth = containingWidth - marginLeft - marginRight - paddingLeft - paddingRight - borderLeft - borderRight
   else:
     contentWidth = rv(style.width, containingWidth)
+    if style.boxSizing == bszBorderBox:
+      contentWidth -= paddingLeft + paddingRight + borderLeft + borderRight
 
   if style.minWidth.kind != cvAuto:
     contentWidth = max(contentWidth, rv(style.minWidth, containingWidth))
@@ -138,6 +140,8 @@ proc layoutBlock*(ctx: LayoutContext, node: Node, containingWidth: float32,
 
   if style.height.kind != cvAuto:
     contentHeight = rv(style.height, containingHeight)
+    if style.boxSizing == bszBorderBox:
+      contentHeight -= paddingTop + paddingBottom + borderTop + borderBottom
 
   if style.minHeight.kind != cvAuto:
     contentHeight = max(contentHeight, rv(style.minHeight, containingHeight))
@@ -383,10 +387,9 @@ proc layoutFlex*(ctx: LayoutContext, node: Node, containingWidth: float32,
                              of aiBaseline: asBaseline
                              else: asStretch
       let crossFree = line[].crossSize - items[i].crossSize
-      items[i].crossStart = crossOffset + case effectiveAlign
-        of asFlexEnd, asEnd: crossFree
-        of asCenter: crossFree / 2
-        else: 0
+      items[i].crossStart = crossOffset + (if effectiveAlign == asFlexEnd: crossFree
+                                            elif effectiveAlign == asCenter: crossFree / 2
+                                            else: 0.0f32)
       mainOffset += items[i].mainSize
       if ki < line[].items.len - 1: mainOffset += gap
       case style.justifyContent

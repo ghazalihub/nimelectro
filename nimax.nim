@@ -1,4 +1,3 @@
-{.mm:"orc".}
 
 import std/[os, strutils, times, tables, sequtils, options]
 import pixie
@@ -9,8 +8,9 @@ import ./css/resolver
 import ./layout/engine
 import ./render/painter
 import ./platform/window
+import ./script/jsbridge
 
-export dom, resolver, painter, window, animation
+export dom, resolver, painter, window, animation, jsbridge
 
 type
   NimaxEngine* = ref object

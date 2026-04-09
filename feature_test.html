@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>NiMax Feature Test</title>
+  <style>
+    :root {
+      --main-bg: #1a1a2e;
+      --card-bg: #16213e;
+      --accent: #e94560;
+      --text: #ffffff;
+    }
+
+    body {
+      background-color: var(--main-bg);
+      color: var(--text);
+      font-family: sans-serif;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background-color: var(--card-bg);
+      border: 2px solid var(--accent);
+      padding: 15px;
+      margin-bottom: 20px;
+      border-radius: 8px;
+      box-sizing: border-box;
+    }
+
+    /* Sibling combinator test */
+    h2 + p {
+      color: #0f3460;
+      font-weight: bold;
+      background: #fff;
+      padding: 5px;
+    }
+
+    /* Inline-block test */
+    .box {
+      display: inline-block;
+      width: 100px;
+      height: 100px;
+      margin: 10px;
+      background-color: #533483;
+      text-align: center;
+      line-height: 100px;
+    }
+
+    /* Grid test */
+    .grid-container {
+      display: grid;
+      grid-template-columns: 1fr 2fr 1fr;
+      gap: 10px;
+      background: #16213e;
+      padding: 10px;
+    }
+    .grid-item {
+      background: #e94560;
+      padding: 20px;
+      text-align: center;
+    }
+
+    /* Media query test */
+    @media (min-width: 600px) {
+      .responsive-box {
+        background-color: #22c55e;
+        width: 200px;
+      }
+    }
+    @media (max-width: 599px) {
+      .responsive-box {
+        background-color: #ef4444;
+        width: 100px;
+      }
+    }
+
+    .responsive-box {
+      height: 50px;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>NiMax Feature Test</h1>
+
+    <div class="card">
+      <h2>CSS Variables & Sibling Combinators</h2>
+      <p>This paragraph should have a white background and bold text because it follows an H2.</p>
+    </div>
+
+    <div class="card">
+      <h2>Inline-Block Side-by-Side</h2>
+      <div class="box">Box 1</div>
+      <div class="box">Box 2</div>
+      <div class="box">Box 3</div>
+    </div>
+
+    <div class="card">
+      <h2>Grid Layout (1fr 2fr 1fr)</h2>
+      <div class="grid-container">
+        <div class="grid-item">Col 1</div>
+        <div class="grid-item">Col 2 (2x)</div>
+        <div class="grid-item">Col 3</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Media Query</h2>
+      <div class="responsive-box">Resize test</div>
+    </div>
+
+    <div class="card">
+      <h2>JS API & Storage Test</h2>
+      <div id="js-output">Testing JS...</div>
+      <div id="storage-output"></div>
+    </div>
+
+    <div class="card" style="position: relative; height: 100px;">
+      <div style="position: absolute; z-index: 2; background: red; top: 10px; left: 10px; width: 50px; height: 50px;">Z:2</div>
+      <div style="position: absolute; z-index: 1; background: blue; top: 30px; left: 30px; width: 50px; height: 50px;">Z:1</div>
+    </div>
+  </div>
+
+  <script>
+    setTimeout(function() {
+      var output = document.getElementById('js-output');
+      var card = document.querySelector('.card');
+      var style = window.getComputedStyle(card);
+
+      var info = "Nimax Version: " + window.nimax.version + "\n";
+      info += "Card Display: " + style.display + "\n";
+      info += "Card BG: " + style.backgroundColor + "\n";
+
+      output.textContent = info;
+
+      localStorage.setItem('test_key', 'Hello Nimax Persistence!');
+      var saved = localStorage.getItem('test_key');
+      document.getElementById('storage-output').textContent = "Stored: " + saved;
+
+      console.log("Feature test script finished");
+    }, 100);
+  </script>
+</body>
+</html>

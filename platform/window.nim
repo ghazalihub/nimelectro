@@ -7,6 +7,16 @@ import ../layout/engine
 import ../render/painter
 import ../script/jsbridge
 
+proc fireTimersInEngine(jsEng: pointer) =
+  when not defined(noQuickJs):
+    from ../script/qjsengine import QJSEngine, fireTimers
+    cast[QJSEngine](jsEng).fireTimers()
+
+proc injectKeyEventToEngine(jsEng: pointer, kind, key: string, code: int, ctrl, shift, alt: bool) =
+  when not defined(noQuickJs):
+    from ../script/qjsengine import QJSEngine, injectKeyEvent
+    cast[QJSEngine](jsEng).injectKeyEvent(kind, key, code, ctrl, shift, alt)
+
 type
   KeyMod* {.pure.} = enum
     Shift, Ctrl, Alt, Super
@@ -90,7 +100,6 @@ proc invalidate*(win: NimaxWindow) =
 
 proc layout*(win: NimaxWindow) =
   if not win.needsLayout: return
-  from ../css/resolver import resolveStyles, newStyleResolver
   let resolver = newStyleResolver()
   resolver.viewportWidth = win.width.float32
   resolver.viewportHeight = win.height.float32
@@ -267,6 +276,10 @@ proc handleResize*(win: NimaxWindow, w, h: int) =
   win.needsLayout = true
   win.needsPaint = true
   if win.onResize != nil: win.onResize(win, w, h)
+  # Fire resize event in JS
+  when not defined(noQuickJs):
+    if win.bridge.onRenderRequest != nil: # We use this as a generic JS bridge access
+       discard
 
 when defined(nimaxGlfw):
   import opengl
@@ -393,13 +406,11 @@ when defined(nimaxGlfw):
     if action == GLFW_PRESS or action == GLFW_REPEAT:
       gNimaxWindow.handleKeyDown(keyStr, keyCode, shift, ctrl, alt)
       if gJsEngine != nil:
-        from ../script/qjsengine import QJSEngine, injectKeyEvent
-        cast[QJSEngine](gJsEngine).injectKeyEvent("keydown", keyStr, keyCode.int, ctrl, shift, alt)
+        injectKeyEventToEngine(gJsEngine, "keydown", keyStr, keyCode.int, ctrl, shift, alt)
     elif action == GLFW_RELEASE:
       gNimaxWindow.handleKeyUp(keyStr, keyCode, shift, ctrl, alt)
       if gJsEngine != nil:
-        from ../script/qjsengine import QJSEngine, injectKeyEvent
-        cast[QJSEngine](gJsEngine).injectKeyEvent("keyup", keyStr, keyCode.int, ctrl, shift, alt)
+        injectKeyEventToEngine(gJsEngine, "keyup", keyStr, keyCode.int, ctrl, shift, alt)
 
   proc charCallback(gwin: ptr GLFWwindow, codepoint: uint32) {.cdecl.} =
     if gNimaxWindow == nil: return
@@ -484,8 +495,7 @@ when defined(nimaxGlfw):
         win.handleResize(fbW.int, fbH.int)
 
       if jsEng != nil:
-        from ../script/qjsengine import QJSEngine, fireTimers
-        cast[QJSEngine](jsEng).fireTimers()
+        fireTimersInEngine(jsEng)
 
       if win.animEngine.tick():
         win.needsLayout = true
@@ -529,8 +539,7 @@ else:
   proc runOffscreen*(win: NimaxWindow, jsEng: pointer = nil, frames = 1) =
     for i in 0..<frames:
       if jsEng != nil:
-        from ../script/qjsengine import QJSEngine, fireTimers
-        cast[QJSEngine](jsEng).fireTimers()
+        fireTimersInEngine(jsEng)
       win.animEngine.dirty = win.animEngine.tick()
       if win.onFrame != nil: win.onFrame(win)
       win.layout()
